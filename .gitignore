@@ -1,0 +1,14 @@
+# Build output
+/ijiya
+/ijiya.exe
+*.exe
+*.test
+*.out
+
+# Report artifacts
+ijiya.json
+ijiya-report.*
+
+# Go workspace
+go.work
+go.work.sum
