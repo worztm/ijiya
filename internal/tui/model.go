@@ -14,7 +14,6 @@ import (
 
 	"ijiya/internal/report"
 	"ijiya/internal/scan"
-	"ijiya/internal/version"
 )
 
 // phase is which screen the user is looking at.
@@ -73,6 +72,8 @@ type model struct {
 	ready    bool
 	toast    string
 	saved    string
+	// confirmQuit arms the second q that actually quits mid-scan.
+	confirmQuit bool
 }
 
 // newModel builds the initial state.
@@ -81,7 +82,6 @@ func newModel(opts Options) model {
 	url.Placeholder = "https://example.com"
 	url.Prompt = "> "
 	url.CharLimit = 2048
-	url.Width = 64
 	url.Focus()
 	if opts.Target != "" {
 		url.SetValue(opts.Target)
@@ -92,7 +92,7 @@ func newModel(opts Options) model {
 		rows = append(rows, checkRow{id: c.ID(), name: c.Name(), selected: true})
 	}
 
-	return model{
+	m := model{
 		opts:     opts,
 		phase:    phaseInput,
 		focus:    focusURL,
@@ -105,6 +105,22 @@ func newModel(opts Options) model {
 		results:  map[string]scan.CheckResult{},
 		feedKeys: map[string]bool{},
 	}
+	m.resizeInput()
+	return m
+}
+
+// resizeInput keeps the URL field inside the screen. textinput has a fixed
+// width, so without this it overflows a terminal narrower than its default and
+// the field's border collides with the right edge.
+func (m *model) resizeInput() {
+	width := m.width - 2*margin - 3 // margin, the focus border and the prompt
+	if width < 10 {
+		width = 10
+	}
+	if width > 200 {
+		width = 200
+	}
+	m.url.Width = width
 }
 
 // Init is called once when the program starts.
@@ -121,6 +137,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.viewportHeight = msg.Height
+		m.resizeInput()
 		m.syncViewport()
 		return m, nil
 
@@ -157,6 +174,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.report = msg.rep
 		m.phase = phaseResults
 		m.cancel = nil
+		m.confirmQuit = false
 		m.syncViewport()
 		m.viewport.GotoTop()
 		return m, m.next()
@@ -261,10 +279,21 @@ func (m model) inputKey(key string, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// scanningKey lets the user abandon a run in progress.
+// scanningKey lets the user abandon a run in progress. Quitting mid-scan asks
+// first, because q and esc are easy to hit by accident and there is no way to
+// get the partial run back.
 func (m model) scanningKey(key string) (tea.Model, tea.Cmd) {
 	switch key {
-	case "q", "esc":
+	case "q":
+		if !m.confirmQuit {
+			m.confirmQuit = true
+			m.toast = "press q again to quit, esc to stop the scan"
+			return m, clearToastAfter(4 * time.Second)
+		}
+		m.stopScan()
+		return m, tea.Quit
+	case "esc":
+		m.confirmQuit = false
 		m.stopScan()
 		m.phase = phaseInput
 		m.focus = focusURL
@@ -272,6 +301,8 @@ func (m model) scanningKey(key string) (tea.Model, tea.Cmd) {
 		m.toast = "scan cancelled"
 		return m, clearToastAfter(3 * time.Second)
 	}
+	// Any other key cancels a pending quit.
+	m.confirmQuit = false
 	return m, nil
 }
 
@@ -353,6 +384,7 @@ func (m model) startScan() (model, tea.Cmd) {
 	}
 	m.toast = ""
 	m.saved = ""
+	m.confirmQuit = false
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan tea.Msg, 64)
@@ -481,21 +513,48 @@ func (m *model) ensure() {
 // finding emitted by a check is not shown again when that check finishes.
 func (m *model) addFeed(f scan.Finding) {
 	m.ensure()
-	key := fmt.Sprintf("%s\x00%s\x00%s\x00%s", f.CheckID, f.Severity, f.Title, f.URL)
-	if m.feedKeys[key] {
+	if m.feedKeys[feedKey(f)] {
 		return
 	}
-	m.feedKeys[key] = true
+	m.feedKeys[feedKey(f)] = true
 	m.feed = append(m.feed, f)
+	// Only the tail is ever displayed, so an unbounded slice would grow the
+	// model on every keystroke copy for no visible benefit. The dedupe keys
+	// of dropped findings go with them, so the map cannot grow without bound
+	// either.
+	if len(m.feed) > maxFeed {
+		drop := len(m.feed) - maxFeed
+		for _, old := range m.feed[:drop] {
+			delete(m.feedKeys, feedKey(old))
+		}
+		m.feed = append(m.feed[:0:0], m.feed[drop:]...)
+	}
 }
 
+// feedKey identifies a finding for the live feed's dedupe set.
+func feedKey(f scan.Finding) string {
+	return fmt.Sprintf("%s\x00%s\x00%s\x00%s", f.CheckID, f.Severity, f.Title, f.URL)
+}
+
+// maxFeed bounds how many live findings are retained.
+const maxFeed = 200
+
 // syncViewport resizes the report viewport and re-wraps its content.
+//
+// The reserved rows mirror the results layout exactly: masthead, rule, target
+// and verdict above the report, plus the blank, rule and key hints below it.
+// One further row is held back when a baseline line is being drawn, so the
+// frame always adds up to the screen height and nothing has to be dropped.
 func (m *model) syncViewport() {
-	vpWidth := m.width - 2
+	vpWidth := m.width - 2*margin
 	if vpWidth < 20 {
 		vpWidth = 20
 	}
-	vpHeight := m.viewportHeight - headerLines - footerLines
+	reserved := resultsChrome
+	if m.report.Suppressed > 0 {
+		reserved++
+	}
+	vpHeight := m.viewportHeight - reserved
 	if vpHeight < 3 {
 		vpHeight = 3
 	}
@@ -533,14 +592,7 @@ func selectedIDs(rows []checkRow) []string {
 	return ids
 }
 
-// headerLines and footerLines are reserved for the fixed chrome around the
-// report viewport: banner, notice, target, blank, summary, blank.
-const (
-	headerLines = 6
-	footerLines = 2
-)
-
-// banner renders the header shared by every screen.
-func bannerLine() string {
-	return fmt.Sprintf("%s %s · %s", version.Name, version.Version, version.Description)
-}
+// resultsChrome is the number of screen rows the results layout uses for
+// everything that is not the scrolling report: masthead, rule, target and the
+// verdict above, plus the blank, rule and key hints below.
+const resultsChrome = 6

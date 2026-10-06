@@ -45,34 +45,42 @@ $ ijiya
 1. Type the URL you want to check and press **enter**.
 2. Pick which checks to run — **tab** switches between the URL field and the
    check list, **space** toggles a check, **a** selects or deselects all, **d**
-   turns on the slower deep probes.
-3. Watch results stream in live: each check shows queued → running → done with
-   its issue count, and a findings feed fills in underneath as they are found.
+   turns on the slower deep probes. The header counts how many are selected.
+3. Watch results stream in live: a progress bar tracks finished checks, each
+   check moves through queued → running → done with its issue count, and the
+   newest findings appear at the top of a live feed.
 4. Scroll the finished report, then press **s** to save it to a file.
+
+Three screens, one grid: a masthead and hairline rule above, the content in the
+middle, and the key hints pinned to the bottom row. Labels are set in small
+caps, severity is the only thing that takes colour, and the body text uses your
+terminal's own foreground so it stays readable in a light or dark theme.
+Checks and their selection are drawn as `[x]` rows, with the cursor as a
+reverse-video bar on the active row.
 
 | Key | Action |
 | --- | --- |
 | `enter` | start the scan |
 | `tab` / `shift+tab` | switch between the URL field and the check list |
-| `↑` `↓` | move the check cursor |
+| `↑` `↓` (or `k` `j`) | move the check cursor |
 | `space` / `a` / `d` | toggle a check / all checks / deep mode |
 | `↑` `↓` `pgup` `pgdn` `home` `end` | scroll the report on the results screen |
 | `s` | save the report to a file |
-| `esc` | cancel a running scan, or return to the input screen |
+| `esc` | cancel a running scan and return to the input screen |
 | `r` | start a new scan from the results screen |
-| `q` | quit (`ctrl+c` always quits) |
+| `q` | quit (`ctrl+c` always quits; mid-scan `q` asks once more first) |
 
 ```console
 $ ijiya -tui https://app.example.com   # open the TUI and scan immediately
 ```
 
-All the usual flags (`-k`, `-t`, `-threads`, `-deep`, `-out`, `-fail-on`, …)
-apply to the interactive scan, and the exit code follows the same `-fail-on`
-contract — so a TUI run can still gate CI.
+All the usual flags (`-k`, `-t`, `-threads`, `-deep`, `-out`, `-fail-on`, `-H`,
+`-rate`, …) apply to the interactive scan, and the exit code follows the same
+`-fail-on` contract — so a TUI run can still gate CI.
 
 Findings are pushed into the feed the moment a check discovers them rather
 than when the whole check finishes, which keeps long `-deep` runs interesting
-to watch.
+to watch. The feed holds the most recent 200 findings.
 
 ## What it checks
 

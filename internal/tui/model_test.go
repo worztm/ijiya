@@ -48,13 +48,30 @@ func TestInputScreenListsEveryCheck(t *testing.T) {
 	m = upd(m, tea.WindowSizeMsg{Width: 100, Height: 40})
 
 	view := m.View()
-	for _, want := range []string{"Target URL", "headers", "cookies", "tls", "cors", "xss", "sqli", "disclosure", "redirect"} {
+	// Field and section labels are set in small caps in the interface.
+	for _, want := range []string{"TARGET URL", "CHECKS", "headers", "cookies", "tls", "cors", "xss", "sqli", "disclosure", "redirect", "deep probes"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("input screen is missing %q", want)
 		}
 	}
 	if m.phase != phaseInput {
 		t.Errorf("phase = %v, want phaseInput", m.phase)
+	}
+}
+
+// TestInputScreenShowsSelectionCount keeps the running total honest: it is the
+// only place the user can see how many checks a scan will actually run.
+func TestInputScreenShowsSelectionCount(t *testing.T) {
+	m := newModel(testOptions())
+	m = upd(m, tea.WindowSizeMsg{Width: 100, Height: 40})
+	if !strings.Contains(m.View(), "8/8") {
+		t.Errorf("expected an 8/8 selection count:\n%s", m.View())
+	}
+
+	m = upd(m, tabKey())
+	m = upd(m, runes("a")) // deselect all
+	if !strings.Contains(m.View(), "0/8") {
+		t.Errorf("expected a 0/8 selection count after deselecting all:\n%s", m.View())
 	}
 }
 
@@ -267,10 +284,15 @@ func TestScanResultsShowIssueCounts(t *testing.T) {
 	m = drain(t, m)
 
 	view := m.View()
-	for _, want := range []string{"Target", "issue", "risk", "grade"} {
+	// The verdict line must state the context and the bottom line, and the
+	// severity of each finding must be readable.
+	for _, want := range []string{"TARGET", "issue", "RISK", "GRADE"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("results view is missing %q\nview:\n%s", want, view)
 		}
+	}
+	if !containsSeverityLabel(view) {
+		t.Errorf("results body does not label any finding with a severity:\n%s", view)
 	}
 	if m.report.Summary.Total == 0 {
 		t.Error("expected findings against the insecure demo server")
@@ -332,11 +354,24 @@ func TestResultsViewRendersSummary(t *testing.T) {
 	m.syncViewport()
 
 	view := m.View()
-	for _, want := range []string{"example.com", "2 issue", "risk", "CRITICAL"} {
+	// "2 issue(s)" is the verdict; CRITICAL comes from the body, which is the
+	// only place the report text itself is drawn.
+	for _, want := range []string{"example.com", "2 issue", "RISK", "CRITICAL"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("results view is missing %q\nview:\n%s", want, view)
 		}
 	}
+}
+
+// containsSeverityLabel reports whether any finding carries a severity label,
+// which is how the results body shows how bad each issue is.
+func containsSeverityLabel(view string) bool {
+	for _, sl := range sevLabels {
+		if strings.Contains(view, sl.label) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestResultsKeysScroll(t *testing.T) {

@@ -16,6 +16,13 @@ type TextOptions struct {
 	Verbose bool
 	Min     scan.Severity
 	Width   int
+	// HideHeader drops the target/started/duration/requests block. Set it
+	// when the caller already prints that context around the report, as the
+	// interactive interface does, so it is not stated twice.
+	HideHeader bool
+	// HideSummary drops the SUMMARY block and the closing rule. Set it when
+	// the caller renders its own verdict, so the counts appear once.
+	HideSummary bool
 }
 
 // ANSI styling helpers. Every helper returns plain text when colors are off.
@@ -59,11 +66,13 @@ func WriteText(w io.Writer, rep Report, opts TextOptions) error {
 		b.WriteString(banner(opts.Color))
 	}
 
-	fmt.Fprintf(&b, "  %s %s\n", paint(dim, "Target  ", opts.Color), paint(bold, rep.Target, opts.Color))
-	fmt.Fprintf(&b, "  %s %s\n", paint(dim, "Started ", opts.Color), rep.StartedAt.Format("2006-01-02 15:04:05 MST"))
-	fmt.Fprintf(&b, "  %s %s\n", paint(dim, "Duration", opts.Color), formatDuration(rep.DurationMS))
-	fmt.Fprintf(&b, "  %s %d across %d checks\n", paint(dim, "Requests", opts.Color), rep.Requests, len(rep.Checks))
-	b.WriteString("  " + rule(opts.Width-2, opts.Color) + "\n")
+	if !opts.HideHeader {
+		fmt.Fprintf(&b, "  %s %s\n", paint(dim, "Target  ", opts.Color), paint(bold, rep.Target, opts.Color))
+		fmt.Fprintf(&b, "  %s %s\n", paint(dim, "Started ", opts.Color), rep.StartedAt.Format("2006-01-02 15:04:05 MST"))
+		fmt.Fprintf(&b, "  %s %s\n", paint(dim, "Duration", opts.Color), formatDuration(rep.DurationMS))
+		fmt.Fprintf(&b, "  %s %d across %d checks\n", paint(dim, "Requests", opts.Color), rep.Requests, len(rep.Checks))
+		b.WriteString("  " + rule(opts.Width-2, opts.Color) + "\n")
+	}
 
 	shown, hidden := 0, 0
 
@@ -120,8 +129,10 @@ func WriteText(w io.Writer, rep Report, opts TextOptions) error {
 		}
 	}
 
-	b.WriteString("  " + rule(opts.Width-2, opts.Color) + "\n")
-	writeSummary(&b, rep, opts, shown, hidden)
+	if !opts.HideSummary {
+		b.WriteString("  " + rule(opts.Width-2, opts.Color) + "\n")
+		writeSummary(&b, rep, opts, shown, hidden)
+	}
 
 	_, err := io.WriteString(w, b.String())
 	return err
