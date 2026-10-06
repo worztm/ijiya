@@ -82,8 +82,8 @@ func WriteText(w io.Writer, rep Report, opts TextOptions) error {
 			if !opts.Verbose {
 				continue
 			}
-			b.WriteString(fmt.Sprintf("\n  %s  %s\n", paint("\x1b[32m", "OK", opts.Color), sectionTitle(c)))
-			b.WriteString(fmt.Sprintf("    %s\n", paint(dim, "no issues found", opts.Color)))
+			fmt.Fprintf(&b, "\n  %s  %s\n", paint("\x1b[32m", "OK", opts.Color), sectionTitle(c))
+			fmt.Fprintf(&b, "    %s\n", paint(dim, "no issues found", opts.Color))
 			continue
 		}
 		shown += len(visible)
@@ -115,8 +115,8 @@ func WriteText(w io.Writer, rep Report, opts TextOptions) error {
 		b.WriteString(paint(bold, "checks that failed", opts.Color))
 		b.WriteString("\n")
 		for _, res := range c {
-			b.WriteString(fmt.Sprintf("    %s  %s: %s\n",
-				paint("\x1b[91m", "ERROR", opts.Color), res.ID, res.Error))
+			fmt.Fprintf(&b, "    %s  %s: %s\n",
+				paint("\x1b[91m", "ERROR", opts.Color), res.ID, res.Error)
 		}
 	}
 
