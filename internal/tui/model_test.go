@@ -319,7 +319,7 @@ func sampleReport() report.Report {
 				{Severity: scan.SeverityHigh, Title: "high"},
 			},
 		},
-	}, 12)
+	}, report.BuildOptions{Requests: 12})
 }
 
 func TestResultsViewRendersSummary(t *testing.T) {
@@ -352,7 +352,7 @@ func TestResultsKeysScroll(t *testing.T) {
 	long := report.Build("https://example.com", time.Now(), []scan.CheckResult{{
 		ID: "headers", Name: "Security headers",
 		Findings: manyFindings(60),
-	}}, 12)
+	}}, report.BuildOptions{Requests: 12})
 	m.report = long
 	m.syncViewport()
 
@@ -386,7 +386,7 @@ func TestExitCodeHonoursFailOn(t *testing.T) {
 	m.report = report.Build("https://example.com", time.Now(), []scan.CheckResult{{
 		ID: "headers", Name: "Security headers",
 		Findings: []scan.Finding{{Severity: scan.SeverityLow, Title: "low only"}},
-	}}, 5)
+	}}, report.BuildOptions{Requests: 5})
 	if m.exitCode() != exitOK {
 		t.Errorf("low finding with FailOn=critical should exit 0, got %d", m.exitCode())
 	}

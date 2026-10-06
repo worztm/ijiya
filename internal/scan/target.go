@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"ijiya/internal/version"
 )
 
 // MaxBody caps how much of a response body is read into memory.
@@ -23,6 +25,12 @@ type Options struct {
 	Deep        bool
 	Insecure    bool
 	Concurrency int
+	// Headers are extra headers added to every request, which is how an
+	// authenticated area is scanned (session cookie, bearer token).
+	Headers []Header
+	// RateLimit caps outbound requests per second across the whole scan.
+	// Zero means unthrottled.
+	RateLimit float64
 }
 
 // Target is the shared HTTP session every check runs against.
@@ -34,6 +42,7 @@ type Target struct {
 	client *http.Client  // follows redirects
 	direct *http.Client  // stops at the first response
 	gate   chan struct{} // global cap on in-flight requests
+	limit  *limiter      // optional requests-per-second throttle
 	reqs   atomic.Int64
 }
 
@@ -98,7 +107,7 @@ func NewTarget(raw string, opts Options) (*Target, error) {
 		opts.Timeout = 10 * time.Second
 	}
 	if opts.UserAgent == "" {
-		opts.UserAgent = "ijiya/0.1.0 (security scanner; +https://example.invalid/ijiya)"
+		opts.UserAgent = version.Name + "/" + version.Version + " (security scanner)"
 	}
 	if opts.Concurrency <= 0 {
 		opts.Concurrency = 8
@@ -119,7 +128,7 @@ func NewTarget(raw string, opts Options) (*Target, error) {
 		KeepAlive: 30 * time.Second,
 	}).DialContext
 
-	rt := &uaTransport{base: transport, ua: opts.UserAgent}
+	rt := &uaTransport{base: transport, ua: opts.UserAgent, headers: headerMap(opts.Headers)}
 
 	client := &http.Client{
 		Transport: rt,
@@ -146,6 +155,7 @@ func NewTarget(raw string, opts Options) (*Target, error) {
 		client: client,
 		direct: direct,
 		gate:   make(chan struct{}, opts.Concurrency),
+		limit:  newLimiter(opts.RateLimit),
 	}, nil
 }
 
@@ -163,10 +173,13 @@ func (t *Target) Base() string {
 	return u.String()
 }
 
-// uaTransport injects browser-like headers on every outbound request.
+// uaTransport injects the scanner's default headers on every outbound
+// request, then layers any user supplied headers on top so an explicit -H can
+// override a default (including the User-Agent).
 type uaTransport struct {
-	base http.RoundTripper
-	ua   string
+	base    http.RoundTripper
+	ua      string
+	headers map[string]string
 }
 
 func (u *uaTransport) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -177,6 +190,9 @@ func (u *uaTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	if clone.Header.Get("Accept-Language") == "" {
 		clone.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	}
+	for name, value := range u.headers {
+		clone.Header.Set(name, value)
 	}
 	return u.base.RoundTrip(clone)
 }
@@ -201,7 +217,8 @@ func (t *Target) PostForm(ctx context.Context, rawurl string, data url.Values, d
 	return t.Do(ctx, req, direct)
 }
 
-// Do executes a prepared request under the global concurrency gate.
+// Do executes a prepared request under the global concurrency gate and, when
+// -rate is set, under the shared request throttle as well.
 func (t *Target) Do(ctx context.Context, req *http.Request, direct bool) (*Response, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -212,6 +229,12 @@ func (t *Target) Do(ctx context.Context, req *http.Request, direct bool) (*Respo
 		return nil, ctx.Err()
 	}
 	defer func() { <-t.gate }()
+
+	// Throttle before spending a connection so a slow scan stays slow
+	// instead of queueing up work the target has to absorb at once.
+	if !t.limit.wait(ctx) {
+		return nil, ctx.Err()
+	}
 
 	cli := t.client
 	if direct {

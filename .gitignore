@@ -12,3 +12,9 @@ ijiya-report.*
 # Go workspace
 go.work
 go.work.sum
+
+# Local tool caches
+/.gocache/
+
+# Scratch space for manual smoke tests
+/.smoke/

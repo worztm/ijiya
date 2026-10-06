@@ -32,8 +32,11 @@ type config struct {
 	checks      string
 	output      string
 	outFile     string
+	outFormat   string
+	baseline    string
 	timeout     time.Duration
 	threads     int
+	rate        float64
 	deep        bool
 	verbose     bool
 	noColor     bool
@@ -45,6 +48,19 @@ type config struct {
 	list        bool
 	showVersion bool
 	tui         bool
+	headers     headerFlags
+}
+
+// headerFlags collects every -H occurrence. flag.Value is used rather than a
+// single string because a scan of an authenticated area usually needs both a
+// session cookie and an API key.
+type headerFlags []string
+
+func (h *headerFlags) String() string { return strings.Join(*h, ", ") }
+
+func (h *headerFlags) Set(v string) error {
+	*h = append(*h, v)
+	return nil
 }
 
 // Run executes the CLI and returns a process exit code.
@@ -57,11 +73,15 @@ func Run(args []string) int {
 	fs.StringVar(&cfg.checks, "c", "all", "alias for -checks")
 	fs.StringVar(&cfg.checks, "checks", "all", "comma-separated checks to run (\"all\" for everything)")
 	fs.StringVar(&cfg.output, "o", "text", "alias for -output")
-	fs.StringVar(&cfg.output, "output", "text", "report format: text or json")
-	fs.StringVar(&cfg.outFile, "out", "", "also write the report to this file")
+	fs.StringVar(&cfg.output, "output", "text", "report format: text, json, sarif or markdown")
+	fs.StringVar(&cfg.outFile, "out", "", "also write the report to this file (format follows the extension)")
+	fs.StringVar(&cfg.outFormat, "out-format", "", "format for -out: text, json, sarif or markdown (default: from the file extension)")
+	fs.StringVar(&cfg.baseline, "baseline", "", "JSON report of known findings to suppress, so CI only fails on new ones")
+	fs.Var(&cfg.headers, "H", "extra request header as \"Name: value\" (repeatable; use for auth cookies and tokens)")
 	fs.DurationVar(&cfg.timeout, "t", 10*time.Second, "alias for -timeout")
 	fs.DurationVar(&cfg.timeout, "timeout", 10*time.Second, "per-request timeout")
 	fs.IntVar(&cfg.threads, "threads", 8, "maximum concurrent HTTP requests")
+	fs.Float64Var(&cfg.rate, "rate", 0, "cap outbound requests per second (0 = unthrottled)")
 	fs.BoolVar(&cfg.deep, "deep", false, "enable slower probes (boolean/time-based SQLi, POST forms)")
 	fs.BoolVar(&cfg.verbose, "v", false, "alias for -verbose")
 	fs.BoolVar(&cfg.verbose, "verbose", false, "show checks that passed and informational findings")
@@ -104,9 +124,27 @@ func Run(args []string) int {
 		cfg.target = rest[0]
 	}
 
-	output := strings.ToLower(strings.TrimSpace(cfg.output))
-	if output != "text" && output != "json" {
-		fmt.Fprintf(os.Stderr, "error: unknown output format %q (want text or json)\n", cfg.output)
+	format, err := report.ParseFormat(cfg.output)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return exitUsage
+	}
+	// The file format defaults to the one selected for stdout, then to the
+	// -out extension when that says something more specific.
+	fileFormat := format
+	if cfg.outFormat != "" {
+		fileFormat, err = report.ParseFormat(cfg.outFormat)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: -out-format: %v\n", err)
+			return exitUsage
+		}
+	} else {
+		fileFormat = report.FormatForFile(cfg.outFile, format)
+	}
+
+	headers, err := scan.ParseHeaders(cfg.headers)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: -H: %v\n", err)
 		return exitUsage
 	}
 
@@ -122,6 +160,14 @@ func Run(args []string) int {
 	}
 	if cfg.threads < 1 {
 		cfg.threads = 1
+	}
+	if cfg.rate < 0 {
+		fmt.Fprintln(os.Stderr, "error: -rate cannot be negative")
+		return exitUsage
+	}
+	if cfg.rate > 0 && cfg.rate < 0.01 {
+		fmt.Fprintln(os.Stderr, "error: -rate must be at least 0.01 requests per second")
+		return exitUsage
 	}
 
 	// Interactive mode: explicitly requested with -tui, or implied when no
@@ -148,8 +194,10 @@ func Run(args []string) int {
 			Threads:     cfg.threads,
 			MinSeverity: minSev,
 			FailOn:      failOn,
+			Headers:     headers,
+			RateLimit:   cfg.rate,
 			OutFile:     cfg.outFile,
-			JSON:        output == "json",
+			JSON:        format == report.FormatJSON,
 			Autostart:   cfg.target != "",
 		})
 	}
@@ -160,7 +208,17 @@ func Run(args []string) int {
 		Deep:        cfg.deep,
 		Insecure:    cfg.insecure,
 		Concurrency: cfg.threads,
+		Headers:     headers,
+		RateLimit:   cfg.rate,
 	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return exitUsage
+	}
+
+	// Load the baseline before scanning: a broken baseline file should stop
+	// the run rather than silently produce a report with no suppression.
+	baseline, err := report.LoadBaseline(cfg.baseline)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return exitUsage
@@ -177,7 +235,9 @@ func Run(args []string) int {
 		report.EnableANSI()
 	}
 
-	jsonMode := output == "json"
+	// Machine readable formats are consumed by tools, so progress chatter
+	// on stderr would only be noise in a CI log.
+	quiet := format != report.FormatText
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -190,9 +250,16 @@ func Run(args []string) int {
 		return exitError
 	}
 
-	if !jsonMode {
+	if !quiet {
 		fmt.Fprintf(os.Stderr, "  scanning %s with %d checks (%s)\n",
 			target.Base(), len(checks), checkNames(checks))
+		if len(headers) > 0 || cfg.rate > 0 {
+			fmt.Fprintf(os.Stderr, "  %s\n", sessionSummary(headers, cfg.rate))
+		}
+		if !baseline.Empty() {
+			fmt.Fprintf(os.Stderr, "  suppressing %d known finding(s) from %s\n",
+				baseline.Len(), cfg.baseline)
+		}
 	}
 
 	started := time.Now()
@@ -200,7 +267,7 @@ func Run(args []string) int {
 		Checks:      checks,
 		Concurrency: cfg.threads,
 		OnResult: func(res scan.CheckResult) {
-			if jsonMode {
+			if quiet {
 				return
 			}
 			switch {
@@ -214,52 +281,35 @@ func Run(args []string) int {
 	}
 	results := engine.Run(ctx, target)
 
-	rep := report.Build(target.URL.String(), started, results, target.Requests())
+	rep := report.Build(target.URL.String(), started, results, report.BuildOptions{
+		Requests: target.Requests(),
+		Banner:   !cfg.noBanner,
+		Baseline: baseline,
+	})
 
 	// Render.
-	if jsonMode {
-		if err := report.WriteJSON(os.Stdout, rep); err != nil {
-			fmt.Fprintf(os.Stderr, "error: writing report: %v\n", err)
-			return exitError
-		}
-	} else {
-		if err := report.WriteText(os.Stdout, rep, report.TextOptions{
-			Color:   color,
-			Verbose: cfg.verbose,
-			Min:     minSev,
-			Width:   terminalWidth(),
-			Banner:  !cfg.noBanner,
-		}); err != nil {
-			fmt.Fprintf(os.Stderr, "error: writing report: %v\n", err)
-			return exitError
-		}
+	textOpts := report.TextOptions{
+		Color:   color,
+		Verbose: cfg.verbose,
+		Min:     minSev,
+		Width:   terminalWidth(),
+	}
+	if err := report.Write(os.Stdout, rep, format, textOpts); err != nil {
+		fmt.Fprintf(os.Stderr, "error: writing report: %v\n", err)
+		return exitError
 	}
 
 	if cfg.outFile != "" {
-		f, err := os.Create(cfg.outFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: creating %s: %v\n", cfg.outFile, err)
+		// A file is read later or by someone else, so it never carries
+		// terminal colour codes.
+		fileOpts := textOpts
+		fileOpts.Color = false
+		if err := writeReportFile(cfg.outFile, rep, fileFormat, fileOpts); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			return exitError
 		}
-		var werr error
-		if jsonMode {
-			werr = report.WriteJSON(f, rep)
-		} else {
-			werr = report.WriteText(f, rep, report.TextOptions{
-				Color:   false,
-				Verbose: cfg.verbose,
-				Min:     minSev,
-				Width:   terminalWidth(),
-				Banner:  !cfg.noBanner,
-			})
-		}
-		f.Close()
-		if werr != nil {
-			fmt.Fprintf(os.Stderr, "error: writing %s: %v\n", cfg.outFile, werr)
-			return exitError
-		}
-		if !jsonMode {
-			fmt.Fprintf(os.Stdout, "\n  report written to %s\n", cfg.outFile)
+		if format == report.FormatText {
+			fmt.Fprintf(os.Stdout, "\n  report written to %s (%s)\n", cfg.outFile, fileFormat)
 		}
 	}
 
@@ -272,6 +322,34 @@ func Run(args []string) int {
 		return exitFindings
 	}
 	return exitOK
+}
+
+// writeReportFile renders rep into name, creating it with the usual
+// permissions for a report.
+func writeReportFile(name string, rep report.Report, format report.Format, opts report.TextOptions) error {
+	f, err := os.Create(name)
+	if err != nil {
+		return fmt.Errorf("creating %s: %w", name, err)
+	}
+	defer f.Close()
+	if err := report.Write(f, rep, format, opts); err != nil {
+		return fmt.Errorf("writing %s: %w", name, err)
+	}
+	return nil
+}
+
+// sessionSummary describes the request headers and throttle in use, naming the
+// headers without repeating their values so a token never reaches a terminal
+// log or a CI transcript.
+func sessionSummary(headers []scan.Header, rate float64) string {
+	var parts []string
+	if len(headers) > 0 {
+		parts = append(parts, "sending "+strings.Join(scan.SortedHeaderNames(headers), ", "))
+	}
+	if rate > 0 {
+		parts = append(parts, fmt.Sprintf("throttled to %g request(s)/s", rate))
+	}
+	return strings.Join(parts, "; ")
 }
 
 // isTerminal reports whether f is attached to a character device, i.e. a
@@ -335,6 +413,7 @@ func printChecks() {
 		fmt.Printf("  %-12s %-24s %s\n", c.ID(), c.Name(), c.Category())
 	}
 	fmt.Printf("\nUse them with -checks, e.g. -checks headers,xss\n")
+	fmt.Printf("Output formats: %s\n", strings.Join(report.Formats(), ", "))
 }
 
 // printUsage writes the full help text.
@@ -372,7 +451,9 @@ func printUsage(fs *flag.FlagSet) {
 		`  ijiya https://example.com`,
 		`  ijiya -checks headers,cookies,tls https://example.com`,
 		`  ijiya -deep -o json -out report.json https://app.example.com`,
-		`  ijiya -min medium -fail-on high https://example.com`,
+		`  ijiya -H "Cookie: session=..." -H "X-API-Key: ..." https://app.example.com`,
+		`  ijiya -rate 5 -min medium -fail-on high https://example.com`,
+		`  ijiya -baseline ijiya.json -o sarif -out results.sarif https://app.example.com`,
 		`  ijiya -k -threads 4 http://localhost:8080`,
 	} {
 		fmt.Fprintln(w, ex)

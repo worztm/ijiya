@@ -329,6 +329,8 @@ func (m model) startScan() (model, tea.Cmd) {
 		Deep:        m.deep,
 		Insecure:    m.opts.Insecure,
 		Concurrency: m.opts.Threads,
+		Headers:     m.opts.Headers,
+		RateLimit:   m.opts.RateLimit,
 	})
 	if err != nil {
 		m.inputErr = err.Error()
@@ -400,7 +402,12 @@ func (m model) runScan(ctx context.Context, ch chan tea.Msg, target *scan.Target
 	if ctx.Err() != nil {
 		return
 	}
-	send(scanDoneMsg{rep: report.Build(target.URL.String(), m.started, results, target.Requests())})
+	send(scanDoneMsg{rep: report.Build(target.URL.String(), m.started, results, report.BuildOptions{
+		Requests: target.Requests(),
+		// The TUI draws its own header, so the text report does not repeat
+		// the ASCII banner inside the viewport.
+		Banner: false,
+	})})
 }
 
 // stopScan cancels a scan that is still running.
@@ -436,11 +443,12 @@ func (m model) saveReport() tea.Cmd {
 		if asJSON {
 			err = report.WriteJSON(f, rep)
 		} else {
-			err = report.WriteText(f, rep, report.TextOptions{
+			saved := rep
+			saved.Banner = true
+			err = report.WriteText(f, saved, report.TextOptions{
 				Verbose: false,
 				Min:     min,
 				Width:   100,
-				Banner:  true,
 			})
 		}
 		return saveDoneMsg{path: path, err: err}

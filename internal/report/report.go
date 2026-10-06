@@ -21,6 +21,13 @@ type Report struct {
 	Summary    Summary            `json:"summary"`
 	RiskScore  int                `json:"risk_score"`
 	Grade      string             `json:"grade"`
+
+	// Suppressed counts findings that the -baseline file already knew about
+	// and that were therefore left out of the results above.
+	Suppressed int `json:"suppressed,omitempty"`
+	// Banner controls the ASCII header in the text renderer. It is a
+	// rendering preference rather than a result, so it stays out of JSON.
+	Banner bool `json:"-"`
 }
 
 // Summary counts findings by severity.
@@ -34,42 +41,63 @@ type Summary struct {
 	Errors   int `json:"errors"`
 }
 
+// BuildOptions carries the scan-wide facts that are not check results.
+type BuildOptions struct {
+	// Requests is how many HTTP requests the scan issued.
+	Requests int64
+	// Banner asks the text renderer to print the ASCII header.
+	Banner bool
+	// Baseline, when set, suppresses findings an earlier scan already
+	// reported. Suppression happens here, before scoring, so the grade and
+	// the -fail-on gate describe the new findings only.
+	Baseline *Baseline
+}
+
 // Build assembles a Report from raw check results.
-func Build(target string, started time.Time, results []scan.CheckResult, requests int64) Report {
+func Build(target string, started time.Time, results []scan.CheckResult, opts BuildOptions) Report {
 	rep := Report{
 		Tool:       version.Name,
 		Version:    version.Version,
 		Target:     target,
 		StartedAt:  started,
 		DurationMS: time.Since(started).Milliseconds(),
-		Requests:   requests,
+		Requests:   opts.Requests,
 		Checks:     results,
+		Banner:     opts.Banner,
 	}
+	rep.Summary, rep.RiskScore, rep.Grade = summarise(rep.Checks)
 
+	if n := opts.Baseline.Suppress(&rep); n > 0 {
+		rep.Suppressed = n
+	}
+	return rep
+}
+
+// summarise counts findings by severity and derives the risk score and grade.
+func summarise(results []scan.CheckResult) (Summary, int, string) {
+	var s Summary
 	for _, r := range results {
 		if r.Failed() {
-			rep.Summary.Errors++
+			s.Errors++
 		}
 		for _, f := range r.Findings {
 			switch f.Severity {
 			case scan.SeverityCritical:
-				rep.Summary.Critical++
+				s.Critical++
 			case scan.SeverityHigh:
-				rep.Summary.High++
+				s.High++
 			case scan.SeverityMedium:
-				rep.Summary.Medium++
+				s.Medium++
 			case scan.SeverityLow:
-				rep.Summary.Low++
+				s.Low++
 			default:
-				rep.Summary.Info++
+				s.Info++
 			}
-			rep.Summary.Total++
+			s.Total++
 		}
 	}
-
-	rep.RiskScore = score(rep.Summary)
-	rep.Grade = grade(rep.RiskScore)
-	return rep
+	risk := score(s)
+	return s, risk, grade(risk)
 }
 
 // score weights findings so that one critical issue dominates the result.

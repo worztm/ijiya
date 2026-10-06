@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -24,6 +25,9 @@ func main() {
 	mux.HandleFunc("/uploads/", uploads)
 	mux.HandleFunc("/.env", envFile)
 	mux.HandleFunc("/.git/config", gitConfig)
+	// /echo shows exactly which request headers arrived, which is how the
+	// -H authenticated-scanning flag is verified by hand.
+	mux.HandleFunc("/echo", echoHeaders)
 
 	log.Printf("vulnerable demo server on http://%s", *addr)
 	log.Fatal(http.ListenAndServe(*addr, mux))
@@ -140,4 +144,21 @@ func gitConfig(w http.ResponseWriter, r *http.Request) {
 [remote "origin"]
 	url = https://example.invalid/demo.git
 `)
+}
+
+// echoHeaders reflects the request headers so a -H flag can be confirmed
+// against a known endpoint. Values are echoed verbatim: this server is a local
+// test fixture and never handles a real credential.
+func echoHeaders(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	names := make([]string, 0, len(r.Header))
+	for name := range r.Header {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		for _, value := range r.Header.Values(name) {
+			fmt.Fprintf(w, "%s: %s\n", name, value)
+		}
+	}
 }

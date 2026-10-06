@@ -1,0 +1,18 @@
+# Normalise line endings in the repository. Without this, a Windows checkout
+# with core.autocrlf=true rewrites files to CRLF, which makes `gofmt -l` (and
+# therefore CI) report every Go file as unformatted.
+* text=auto eol=lf
+
+*.go text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
+
+# Binary artefacts must never be converted.
+*.exe binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.zip binary

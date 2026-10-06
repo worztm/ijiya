@@ -16,7 +16,6 @@ type TextOptions struct {
 	Verbose bool
 	Min     scan.Severity
 	Width   int
-	Banner  bool
 }
 
 // ANSI styling helpers. Every helper returns plain text when colors are off.
@@ -56,7 +55,7 @@ func WriteText(w io.Writer, rep Report, opts TextOptions) error {
 	}
 	var b strings.Builder
 
-	if opts.Banner {
+	if rep.Banner {
 		b.WriteString(banner(opts.Color))
 	}
 
@@ -174,6 +173,10 @@ func writeSummary(b *strings.Builder, rep Report, opts TextOptions, shown, hidde
 	if s.Total == 0 {
 		fmt.Fprintf(b, "  %s No issues found. Nothing to fix on the tested surface.\n",
 			paint("\x1b[1;32m", "PASS", opts.Color))
+		if rep.Suppressed > 0 {
+			fmt.Fprintf(b, "  %s\n", paint(dim,
+				fmt.Sprintf("%d known finding(s) suppressed by the baseline; nothing new.", rep.Suppressed), opts.Color))
+		}
 		return
 	}
 
@@ -213,6 +216,10 @@ func writeSummary(b *strings.Builder, rep Report, opts TextOptions, shown, hidde
 
 	if hidden > 0 {
 		fmt.Fprintf(b, "    %s\n", paint(dim, fmt.Sprintf("(%d finding(s) hidden by the severity filter)", hidden), opts.Color))
+	}
+	if rep.Suppressed > 0 {
+		fmt.Fprintf(b, "    %s\n", paint(dim,
+			fmt.Sprintf("(%d known finding(s) suppressed by the baseline)", rep.Suppressed), opts.Color))
 	}
 }
 

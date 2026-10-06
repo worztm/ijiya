@@ -32,7 +32,7 @@ func TestBuildCountsAndScores(t *testing.T) {
 		},
 	}
 
-	rep := Build("https://example.com", time.Now(), results, 12)
+	rep := Build("https://example.com", time.Now(), results, BuildOptions{Requests: 12})
 
 	if rep.Summary.Critical != 1 || rep.Summary.High != 1 ||
 		rep.Summary.Medium != 1 || rep.Summary.Low != 1 || rep.Summary.Info != 0 {

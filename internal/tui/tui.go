@@ -25,6 +25,11 @@ type Options struct {
 	Threads     int
 	MinSeverity scan.Severity
 	FailOn      scan.Severity
+	// Headers are extra headers every request carries, which is how an
+	// authenticated area is scanned from the TUI too.
+	Headers []scan.Header
+	// RateLimit caps outbound requests per second; zero is unthrottled.
+	RateLimit float64
 	// OutFile, when set, is the default destination for the save action.
 	OutFile string
 	// JSON saves the report as JSON rather than text.

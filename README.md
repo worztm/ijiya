@@ -12,7 +12,7 @@ $ ijiya https://app.example.com
     ██     ██    ██    ███   █████
     ██     ██    ██     ██   ██  ██
   █████   ███   █████    ██   ██  ██
-  lightweight web vulnerability scanner  v0.1.0
+  lightweight web vulnerability scanner  v0.2.0
   Only scan systems you own or have explicit permission to test.
 
   headers  Security headers  8ms · 3 issue(s)
@@ -114,10 +114,14 @@ $ ijiya [flags] <url>     # one-shot scan, prints a report and exits
 | Flag | Default | Purpose |
 | --- | --- | --- |
 | `-checks`, `-c` | `all` | Comma-separated list: `headers,cookies,tls,cors,xss,sqli,disclosure,redirect` (aliases like `ssl`, `sql`, `leaks` also work) |
-| `-output`, `-o` | `text` | Report format: `text` or `json` |
-| `-out` | – | Also write the report to a file |
+| `-output`, `-o` | `text` | Report format: `text`, `json`, `sarif` or `markdown` |
+| `-out` | – | Also write the report to a file (format follows the extension: `.sarif`, `.json`, `.md`) |
+| `-out-format` | from the extension | Override the format used for `-out` |
+| `-baseline` | – | A JSON report of known findings to suppress, so CI only fails on new ones |
+| `-H` | – | Extra request header as `"Name: value"`, repeatable — use it for auth cookies and tokens |
 | `-timeout`, `-t` | `10s` | Per-request timeout |
 | `-threads` | `8` | Maximum concurrent HTTP requests |
+| `-rate` | off | Cap outbound requests per second (`0.01`–…) so a production host is not hammered |
 | `-deep` | off | Enable the slow probes: boolean/time-based SQL injection and POST form fields |
 | `-min` | `info` | Hide findings below this severity |
 | `-fail-on` | `medium` | Exit `1` when a finding reaches this severity |
@@ -126,7 +130,7 @@ $ ijiya [flags] <url>     # one-shot scan, prints a report and exits
 | `-user-agent`, `-ua` | built-in | Override the User-Agent |
 | `-no-color`, `-nc` | off | Disable ANSI colour (also honours `NO_COLOR`) |
 | `-no-banner`, `-nb` | off | Hide the startup banner |
-| `-list` | – | List the available checks |
+| `-list` | – | List the available checks and the output formats |
 | `-tui` | off | Force the interactive interface (scans immediately when a URL is given) |
 | `-version` | – | Print the version |
 
@@ -142,9 +146,73 @@ $ ijiya -checks headers,cookies,tls,cors -min medium -fail-on high https://app.e
 # Everything, including blind SQL injection and POST forms, as JSON
 $ ijiya -deep -o json -out report.json https://app.example.com
 
+# Scan behind a login: both a session cookie and an API key on every request
+$ ijiya -H "Cookie: session=$SESSION" -H "X-API-Key: $KEY" https://app.example.com/account
+
+# Be gentle with a production host: at most five requests per second
+$ ijiya -rate 5 https://app.example.com
+
 # Local development box with a self-signed certificate
 $ ijiya -k -threads 4 http://localhost:8080
 ```
+
+### Scanning authenticated areas
+
+By default `ijiya` sees exactly what an anonymous visitor sees, which for most
+applications means the login page. `-H` puts an arbitrary header on every
+request, so the checks run against the pages that actually hold the data:
+
+```console
+$ ijiya -H "Cookie: session=$SESSION" https://app.example.com/dashboard
+$ ijiya -H "Authorization: Bearer $TOKEN" https://api.example.com/v1/me
+```
+
+`-H` may be repeated and the value may contain colons (`Origin`,
+`X-Forwarded-For: 10.0.0.1:8080`). Header **names** are printed at startup so
+you can confirm what was sent, but values never are — a token must not end up
+in a terminal log or a CI transcript. A malformed header is a usage error
+(exit `2`) rather than a confusing transport failure later.
+
+Tune the load with `-threads` and `-rate`. `-threads` bounds how many requests
+are in flight at once; `-rate` bounds how many go out per second, which is the
+better lever against a host you share with real users.
+
+### Output formats
+
+| Format | Use it for |
+| --- | --- |
+| `text` | Reading in a terminal (the default) |
+| `json` | Scripts, dashboards, and as a `-baseline` for later runs |
+| `sarif` | Uploading to GitHub code scanning, where findings appear as review annotations |
+| `markdown` | Pull-request comments and job summaries |
+
+```console
+$ ijiya -o sarif -out results.sarif https://app.example.com   # format from the extension
+$ ijiya -o markdown https://app.example.com                   # pipe it into a PR comment
+$ ijiya -o json -out latest.json https://app.example.com
+```
+
+### Using a baseline in CI
+
+A scan of an application that already has known issues should still fail a
+build when the change under review introduces a *new* one. `-baseline` takes a
+previous JSON report and suppresses every finding it contains:
+
+```console
+# Record today's state once
+$ ijiya -o json -out ijiya-baseline.json "$STAGING_URL"
+
+# From now on only new findings are reported, scored and gated on
+$ ijiya -baseline ijiya-baseline.json -o sarif -out results.sarif -fail-on high "$STAGING_URL"
+```
+
+Matching is by check, title and URL path, so it survives a different host name
+(staging vs. preview), query strings and session IDs — while a finding that
+moves to a new path is treated as new. Suppressed findings are counted in the
+output (`suppressed` in JSON, a line in the text report) rather than silently
+dropped, the summary and grade describe the new findings only, and a missing
+baseline file is not an error (the first CI run has nothing to compare
+against). Regenerate the baseline deliberately, by promoting a reviewed report.
 
 ### Exit codes
 
@@ -163,11 +231,17 @@ This makes it usable as a CI gate:
     ijiya -checks headers,cookies,tls,cors \
           -o json -out ijiya.json \
           -fail-on high "$STAGING_URL"
+
+- name: Upload findings to code scanning
+  if: always()
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: ijiya.sarif
 ```
 
 The JSON report contains `tool`, `target`, `started_at`, `requests`, the full
 `checks[]` array with `severity`/`evidence`/`remediation` per finding, plus
-`summary`, `risk_score` and `grade`.
+`summary`, `risk_score`, `grade` and `suppressed`.
 
 ## Testing it against a vulnerable app
 
@@ -179,13 +253,21 @@ $ go run ./testdata/vulnserver -addr 127.0.0.1:8099
 $ ijiya http://127.0.0.1:8099/
 ```
 
-It binds to loopback only and should never be exposed to a network.
+It binds to loopback only and should never be exposed to a network. Its
+`/echo` endpoint prints the request headers it received, which is the quickest
+way to confirm that `-H` is doing what you expect:
+
+```console
+$ curl -s -H "X-Api-Key: k123" http://127.0.0.1:8099/echo | grep -i api-key
+X-Api-Key: k123
+```
 
 ## How it works
 
 `ijiya` drives every check through one shared HTTP session, so a single
 concurrency gate (`-threads`) bounds the total number of in-flight requests no
-matter how many checks are running.
+matter how many checks are running, and an optional `-rate` throttle bounds how
+many requests leave per second.
 
 - **Header and cookie checks** parse the response of the target page.
 - **XSS** fetches the page, extracts query parameters and HTML form fields
@@ -224,6 +306,10 @@ Useful boundaries, all of which are already in place:
 - POST form submission is opt-in via `-deep`.
 - `Set-Cookie` values are redacted in reports so secrets do not leak into
   shared output.
+- Header *values* supplied with `-H` are never echoed into reports or progress
+  output — only the header names are.
+- `-rate` throttles the whole scan, so a shared or production host is not
+  pushed past what it can absorb.
 
 ## Limitations
 
@@ -232,8 +318,20 @@ Useful boundaries, all of which are already in place:
   the parameters you want tested.
 - Detection is signature- and heuristic-based. Treat every finding as a lead to
   confirm, and remember that a clean scan never proves the absence of a bug.
-- Authenticated areas, JSON bodies, custom headers and HTTP parameter
-  pollution are not tested.
+- `-H` gets you past a login, but it does not discover or replay a login flow,
+  refresh an expired token, or walk a multi-step authenticated journey.
+- JSON bodies, HTTP parameter pollution and web-socket traffic are not tested.
+
+## Development
+
+```console
+$ go test ./...        # unit tests for the checks, renderers and TUI
+$ go vet ./...
+$ gofmt -l .           # CI fails on unformatted files
+```
+
+CI runs the tests with `-race` on Linux, macOS and Windows, plus
+`golangci-lint`; see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## License
 

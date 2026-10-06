@@ -443,12 +443,13 @@ func renderReport(rep report.Report, width int, min scan.Severity) string {
 		return ""
 	}
 	var b strings.Builder
+	// The TUI supplies its own header, so the ASCII banner is left off.
+	rep.Banner = false
 	_ = report.WriteText(&b, rep, report.TextOptions{
 		Color:   true,
 		Verbose: false,
 		Min:     min,
 		Width:   width,
-		Banner:  false, // the TUI supplies its own header
 	})
 	return b.String()
 }
