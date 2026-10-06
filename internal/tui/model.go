@@ -439,7 +439,7 @@ func (m model) saveReport() tea.Cmd {
 		if err != nil {
 			return saveDoneMsg{path: path, err: err}
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		if asJSON {
 			err = report.WriteJSON(f, rep)
 		} else {

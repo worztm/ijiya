@@ -331,7 +331,7 @@ func writeReportFile(name string, rep report.Report, format report.Format, opts 
 	if err != nil {
 		return fmt.Errorf("creating %s: %w", name, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := report.Write(f, rep, format, opts); err != nil {
 		return fmt.Errorf("writing %s: %w", name, err)
 	}

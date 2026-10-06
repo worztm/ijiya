@@ -247,7 +247,9 @@ func (t *Target) Do(ctx context.Context, req *http.Request, direct bool) (*Respo
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	// The body is fully read below, so a close error carries no information
+	// the caller could act on; it still has to be acknowledged explicitly.
+	defer func() { _ = resp.Body.Close() }()
 
 	limited := io.LimitReader(resp.Body, int64(MaxBody)+1)
 	body, err := io.ReadAll(limited)

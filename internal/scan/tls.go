@@ -250,10 +250,12 @@ func inspectTLS(ctx context.Context, host, port string, timeout time.Duration) (
 	}
 	tc, ok := conn.(*tls.Conn)
 	if !ok {
-		conn.Close()
+		// Closing a connection we are about to discard cannot fail in a way
+		// worth reporting, but the error still has to be acknowledged.
+		_ = conn.Close()
 		return nil, 0, fmt.Errorf("unexpected connection type %T", conn)
 	}
-	defer tc.Close()
+	defer func() { _ = tc.Close() }()
 
 	state := tc.ConnectionState()
 	if len(state.PeerCertificates) == 0 {
@@ -277,7 +279,7 @@ func inspectChain(host, port string, timeout time.Duration) ([]*x509.Certificate
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	tc, ok := conn.(*tls.Conn)
 	if !ok {
 		return nil, fmt.Errorf("unexpected connection type %T", conn)

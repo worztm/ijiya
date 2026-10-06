@@ -198,7 +198,9 @@ func TestFingerprintFallsBackWhenCheckIsFilledByTheEngine(t *testing.T) {
 	if err := WriteJSON(f, rep); err != nil {
 		t.Fatalf("writing: %v", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatalf("closing: %v", err)
+	}
 
 	bl, err := LoadBaseline(path)
 	if err != nil {
