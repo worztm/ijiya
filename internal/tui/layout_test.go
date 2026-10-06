@@ -320,6 +320,36 @@ func TestProgressBarReflectsCompletedChecks(t *testing.T) {
 	}
 }
 
+// TestCleanScanSaysSo checks a scan with no findings reports a pass rather
+// than a bare zero, and that a zeroed report cannot print a nonsense duration.
+func TestCleanScanSaysSo(t *testing.T) {
+	m := newModel(testOptions())
+	m = upd(m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.report = report.Build("https://shop.example.com", time.Now(), []scan.CheckResult{
+		{ID: "headers", Name: "Security headers"},
+	}, report.BuildOptions{Requests: 12})
+	m.phase = phaseResults
+	m.syncViewport()
+
+	view := stripANSI(m.View())
+	for _, want := range []string{"PASS", "no issues found", "GRADE A+"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("clean results are missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "0 issue(s)") {
+		t.Errorf("a clean scan should not report zero issues:\n%s", view)
+	}
+
+	// A report with no start time must not produce a negative clock.
+	if got := formatClock(-5000); got != "0ms" {
+		t.Errorf("formatClock(-5000) = %q, want 0ms", got)
+	}
+	if got := formatClock(60 * 60 * 24 * 1000 * 400); got != "24h+" {
+		t.Errorf("formatClock(huge) = %q, want 24h+", got)
+	}
+}
+
 // stripANSI removes SGR sequences so assertions can look at the visible text.
 func stripANSI(s string) string {
 	var b strings.Builder

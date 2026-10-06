@@ -504,19 +504,23 @@ func (m model) viewResults(width int) []string {
 		margin2(head),
 	}
 
-	// Verdict band: the counts that matter, the grade, and the cost.
-	verdict := []string{
-		stMark.Render(fmt.Sprintf("%d issue(s)", s.Total)),
-		sevCount(s.Critical, scan.SeverityCritical),
-		sevCount(s.High, scan.SeverityHigh),
-		sevCount(s.Medium, scan.SeverityMedium),
-		sevCount(s.Low, scan.SeverityLow),
-		sevCount(s.Info, scan.SeverityInfo),
-	}
+	// Verdict band: the outcome, the counts that matter, the grade, and the
+	// cost. A clean scan says so explicitly rather than showing a zero.
 	var parts []string
-	for _, v := range verdict {
-		if v != "" {
-			parts = append(parts, v)
+	if s.Total == 0 {
+		parts = append(parts, stGood.Render("PASS")+stBody.Render(" no issues found"))
+	} else {
+		parts = append(parts, stMark.Render(fmt.Sprintf("%d issue(s)", s.Total)))
+		for _, v := range []string{
+			sevCount(s.Critical, scan.SeverityCritical),
+			sevCount(s.High, scan.SeverityHigh),
+			sevCount(s.Medium, scan.SeverityMedium),
+			sevCount(s.Low, scan.SeverityLow),
+			sevCount(s.Info, scan.SeverityInfo),
+		} {
+			if v != "" {
+				parts = append(parts, v)
+			}
 		}
 	}
 	line := strings.Join(parts, stSub.Render(gutter))
@@ -599,8 +603,16 @@ func timeSince(t time.Time) string {
 	return fmt.Sprintf("%.1fs", d.Seconds())
 }
 
-// formatClock renders a millisecond duration for the results footer.
+// formatClock renders a millisecond duration for the results footer. Negative
+// or absurd inputs are clamped, so a zeroed or skewed report cannot print a
+// nonsensical elapsed time.
 func formatClock(ms int64) string {
+	if ms < 0 {
+		ms = 0
+	}
+	if ms > 24*60*60*1000 {
+		return "24h+"
+	}
 	d := time.Duration(ms) * time.Millisecond
 	switch {
 	case d < time.Second:
