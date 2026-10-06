@@ -30,5 +30,7 @@ func EnableANSI() {
 	if mode&enableVirtualTerminalProcessing != 0 {
 		return
 	}
-	procSetConsoleMode.Call(handle, uintptr(mode|enableVirtualTerminalProcessing))
+	// A failure here only means colour stays off, which the caller already
+	// tolerates, so the result is deliberately discarded.
+	_, _, _ = procSetConsoleMode.Call(handle, uintptr(mode|enableVirtualTerminalProcessing))
 }

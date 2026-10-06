@@ -203,9 +203,13 @@ func keyStrength(cert *x509.Certificate) (algo string, bits, floor int, known bo
 	case *rsa.PublicKey:
 		return "RSA", pub.N.BitLen(), 2048, true
 	case *ecdsa.PublicKey:
-		if params := pub.Curve.Params(); params != nil {
-			return "ECDSA", params.BitSize, 256, true
+		// Curve is the embedded elliptic.Curve, whose Params() gives the
+		// field size; a public key always carries a named curve.
+		params := pub.Params()
+		if params == nil {
+			return "", 0, 0, false
 		}
+		return "ECDSA", params.BitSize, 256, true
 	case ed25519.PublicKey:
 		return "Ed25519", len(pub) * 8, 128, true
 	}

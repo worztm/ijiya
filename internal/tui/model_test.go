@@ -169,7 +169,9 @@ func insecureServer() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Add("Set-Cookie", "session_id=demo-token; Path=/")
-		fmt.Fprint(w, `<!doctype html><html><body>
+		// A failure here would surface as a test failure of the scan
+		// itself, so the write error needs no separate handling.
+		_, _ = fmt.Fprint(w, `<!doctype html><html><body>
 <h1>demo</h1>
 <form method="get" action="/search"><input name="q" value=""></form>
 </body></html>`)

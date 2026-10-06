@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strconv"
@@ -129,16 +130,17 @@ func Run(args []string) int {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return exitUsage
 	}
-	// The file format defaults to the one selected for stdout, then to the
-	// -out extension when that says something more specific.
-	fileFormat := format
-	if cfg.outFormat != "" {
+	// The file format is the one selected for stdout, unless -out-format
+	// says otherwise, unless the -out extension is more specific than that.
+	var fileFormat report.Format
+	switch {
+	case cfg.outFormat != "":
 		fileFormat, err = report.ParseFormat(cfg.outFormat)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: -out-format: %v\n", err)
 			return exitUsage
 		}
-	} else {
+	default:
 		fileFormat = report.FormatForFile(cfg.outFile, format)
 	}
 
@@ -309,7 +311,9 @@ func Run(args []string) int {
 			return exitError
 		}
 		if format == report.FormatText {
-			fmt.Fprintf(os.Stdout, "\n  report written to %s (%s)\n", cfg.outFile, fileFormat)
+			// Informational, and the report itself is already on stdout, so
+			// a failure to write this line changes nothing.
+			_, _ = fmt.Fprintf(os.Stdout, "\n  report written to %s (%s)\n", cfg.outFile, fileFormat)
 		}
 	}
 
@@ -406,23 +410,32 @@ func checkNames(checks []scan.Check) string {
 	return strings.Join(ids, ", ")
 }
 
+// sayf, say and sayln write help and status text. Terminal output is
+// best-effort: a failed write to a console or a flag set's writer cannot be
+// recovered from, and the process exit code already reflects the real result
+// of the run, so these helpers acknowledge that the error is deliberately
+// ignored instead of leaving it implicit.
+func sayf(w io.Writer, format string, args ...any) { _, _ = fmt.Fprintf(w, format, args...) }
+func say(w io.Writer, args ...any)                 { _, _ = fmt.Fprint(w, args...) }
+func sayln(w io.Writer, args ...any)               { _, _ = fmt.Fprintln(w, args...) }
+
 // printChecks writes the -list output.
 func printChecks() {
-	fmt.Printf("%s %s available checks:\n\n", version.Name, version.Version)
+	sayf(os.Stdout, "%s %s available checks:\n\n", version.Name, version.Version)
 	for _, c := range scan.Available() {
-		fmt.Printf("  %-12s %-24s %s\n", c.ID(), c.Name(), c.Category())
+		sayf(os.Stdout, "  %-12s %-24s %s\n", c.ID(), c.Name(), c.Category())
 	}
-	fmt.Printf("\nUse them with -checks, e.g. -checks headers,xss\n")
-	fmt.Printf("Output formats: %s\n", strings.Join(report.Formats(), ", "))
+	say(os.Stdout, "\nUse them with -checks, e.g. -checks headers,xss\n")
+	sayf(os.Stdout, "Output formats: %s\n", strings.Join(report.Formats(), ", "))
 }
 
 // printUsage writes the full help text.
 func printUsage(fs *flag.FlagSet) {
 	w := fs.Output()
-	fmt.Fprintf(w, "%s %s - %s\n\n", version.Name, version.Version, version.Description)
-	fmt.Fprintf(w, "USAGE\n  %s [flags] <url>\n\n", version.Name)
+	sayf(w, "%s %s - %s\n\n", version.Name, version.Version, version.Description)
+	sayf(w, "USAGE\n  %s [flags] <url>\n\n", version.Name)
 
-	fmt.Fprintf(w, "DESCRIPTION\n")
+	say(w, "DESCRIPTION\n")
 	for _, line := range []string{
 		"  ijiya probes a web application for the loopholes that most often",
 		"  lead to compromise, and tells you how to close each one:",
@@ -439,14 +452,14 @@ func printUsage(fs *flag.FlagSet) {
 		"  " + version.Notice,
 		"",
 	} {
-		fmt.Fprintln(w, line)
+		sayln(w, line)
 	}
 
-	fmt.Fprintf(w, "FLAGS\n")
+	say(w, "FLAGS\n")
 	fs.SetOutput(w)
 	fs.PrintDefaults()
 
-	fmt.Fprintf(w, "\nEXAMPLES\n")
+	say(w, "\nEXAMPLES\n")
 	for _, ex := range []string{
 		`  ijiya https://example.com`,
 		`  ijiya -checks headers,cookies,tls https://example.com`,
@@ -456,12 +469,12 @@ func printUsage(fs *flag.FlagSet) {
 		`  ijiya -baseline ijiya.json -o sarif -out results.sarif https://app.example.com`,
 		`  ijiya -k -threads 4 http://localhost:8080`,
 	} {
-		fmt.Fprintln(w, ex)
+		sayln(w, ex)
 	}
 
-	fmt.Fprintf(w, "\nEXIT CODES\n")
-	fmt.Fprintf(w, "  0  clean (no finding at or above -fail-on)\n")
-	fmt.Fprintf(w, "  1  findings at or above -fail-on\n")
-	fmt.Fprintf(w, "  2  invalid usage\n")
-	fmt.Fprintf(w, "  3  the scan could not run\n")
+	say(w, "\nEXIT CODES\n")
+	say(w, "  0  clean (no finding at or above -fail-on)\n")
+	say(w, "  1  findings at or above -fail-on\n")
+	say(w, "  2  invalid usage\n")
+	say(w, "  3  the scan could not run\n")
 }

@@ -72,8 +72,10 @@ func TestSeverityParsingAndRanking(t *testing.T) {
 	if _, err := ParseSeverity("purple"); err == nil {
 		t.Error("expected an error for an unknown severity")
 	}
-	if !(SeverityCritical > SeverityHigh && SeverityHigh > SeverityMedium &&
-		SeverityMedium > SeverityLow && SeverityLow > SeverityInfo) {
+	// Written as an "ordered" assertion so the intent reads directly:
+	// each rank must sit strictly above the one below it.
+	if SeverityCritical <= SeverityHigh || SeverityHigh <= SeverityMedium ||
+		SeverityMedium <= SeverityLow || SeverityLow <= SeverityInfo {
 		t.Error("severities must rank critical > high > medium > low > info")
 	}
 	if !SeverityHigh.AtLeast(SeverityMedium) || SeverityLow.AtLeast(SeverityMedium) {

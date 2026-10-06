@@ -15,6 +15,7 @@ go.work.sum
 
 # Local tool caches
 /.gocache/
+/.golangci-cache/
 
 # Scratch space for manual smoke tests
 /.smoke/
