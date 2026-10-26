@@ -13,7 +13,7 @@ import (
 	"os"
 	"strings"
 
-	"ijiya/internal/scan"
+	"github.com/worztm/ijiya/internal/scan"
 )
 
 // Baseline is a set of known findings loaded from an earlier JSON report.

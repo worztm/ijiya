@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"ijiya/internal/scan"
+	"github.com/worztm/ijiya/internal/scan"
 )
 
 func TestParseFormat(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"ijiya/internal/scan"
+	"github.com/worztm/ijiya/internal/scan"
 )
 
 // SARIF 2.1.0 structures. Only the subset a security scanner needs is modelled

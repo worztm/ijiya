@@ -14,10 +14,10 @@ import (
 	"syscall"
 	"time"
 
-	"ijiya/internal/report"
-	"ijiya/internal/scan"
-	"ijiya/internal/tui"
-	"ijiya/internal/version"
+	"github.com/worztm/ijiya/internal/report"
+	"github.com/worztm/ijiya/internal/scan"
+	"github.com/worztm/ijiya/internal/tui"
+	"github.com/worztm/ijiya/internal/version"
 )
 
 // Exit codes. They are documented in --help so scripts can rely on them.

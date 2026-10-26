@@ -12,8 +12,8 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"ijiya/internal/report"
-	"ijiya/internal/scan"
+	"github.com/worztm/ijiya/internal/report"
+	"github.com/worztm/ijiya/internal/scan"
 )
 
 // phase is which screen the user is looking at.

@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"ijiya/internal/version"
+	"github.com/worztm/ijiya/internal/version"
 )
 
 // MaxBody caps how much of a response body is read into memory.

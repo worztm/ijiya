@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"ijiya/internal/scan"
+	"github.com/worztm/ijiya/internal/scan"
 )
 
 // writeBaseline writes rep as JSON and returns the file path.

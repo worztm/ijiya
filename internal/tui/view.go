@@ -7,9 +7,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"ijiya/internal/report"
-	"ijiya/internal/scan"
-	"ijiya/internal/version"
+	"github.com/worztm/ijiya/internal/report"
+	"github.com/worztm/ijiya/internal/scan"
+	"github.com/worztm/ijiya/internal/version"
 )
 
 // ---------------------------------------------------------------------------

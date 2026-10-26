@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"ijiya/internal/scan"
-	"ijiya/internal/version"
+	"github.com/worztm/ijiya/internal/scan"
+	"github.com/worztm/ijiya/internal/version"
 )
 
 // TextOptions controls the human readable renderer.

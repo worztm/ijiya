@@ -9,27 +9,60 @@ finding a severity, evidence, and a practical fix.
 
 > Only scan systems you own or have explicit permission to test.
 
-## Quick start
+## Install
 
-Build the binary:
+### Go users
+
+Go 1.26 or newer can install `ijiya` directly from this repository:
 
 ```console
-go build -o ijiya .
+go install github.com/worztm/ijiya@v0.3.0
 ```
+
+The binary is placed in your Go binary directory. Make sure that directory is
+on your `PATH`, then verify the installation:
+
+```console
+ijiya -version
+```
+
+On Windows, the default location is usually `%USERPROFILE%\go\bin`. On
+macOS and Linux, it is usually `$HOME/go/bin`.
+
+### Prebuilt binaries
+
+If you do not have Go installed, download the archive for your operating
+system and CPU from the [GitHub Releases page](https://github.com/worztm/ijiya/releases).
+
+Available builds include:
+
+- Windows: `amd64` and `arm64`
+- macOS: `amd64` and `arm64`
+- Linux: `amd64` and `arm64`
+
+Extract the archive, put the `ijiya` binary somewhere on your `PATH`, and run:
+
+```console
+ijiya -version
+```
+
+Each release also includes a `SHA256SUMS` file for verifying downloads.
+
+## Quick start
 
 Run a scan:
 
 ```console
-./ijiya https://app.example.com
+ijiya https://app.example.com
 ```
 
 Run the interactive interface instead:
 
 ```console
-./ijiya
+ijiya
 ```
 
-The project requires Go 1.26 or newer and has no runtime dependencies.
+The project has no runtime dependencies.
 
 ## Interactive mode
 
@@ -46,7 +79,7 @@ you want to choose checks and watch a scan as it runs.
 You can also start the interface with a URL already selected:
 
 ```console
-./ijiya -tui https://app.example.com
+ijiya -tui https://app.example.com
 ```
 
 | Key | Action |
@@ -81,7 +114,7 @@ evidence, and a remediation suggestion.
 ## Usage
 
 ```console
-./ijiya [flags] <url>
+ijiya [flags] <url>
 ```
 
 With no URL, `ijiya` starts the interactive interface when it is attached to a
@@ -92,13 +125,13 @@ terminal. With a URL, it runs a one-shot scan and prints the report.
 Scan everything:
 
 ```console
-./ijiya https://app.example.com
+ijiya https://app.example.com
 ```
 
 Run only configuration checks and fail CI on high-severity findings:
 
 ```console
-./ijiya \
+ijiya \
   -checks headers,cookies,tls,cors \
   -min medium \
   -fail-on high \
@@ -108,13 +141,13 @@ Run only configuration checks and fail CI on high-severity findings:
 Enable the slower SQL injection and POST form checks:
 
 ```console
-./ijiya -deep https://app.example.com
+ijiya -deep https://app.example.com
 ```
 
 Scan an authenticated area. Header values are never printed by the tool:
 
 ```console
-./ijiya \
+ijiya \
   -H "Cookie: session=$SESSION" \
   -H "Authorization: Bearer $TOKEN" \
   https://app.example.com/dashboard
@@ -123,15 +156,15 @@ Scan an authenticated area. Header values are never printed by the tool:
 Limit the load against a shared or production system:
 
 ```console
-./ijiya -threads 4 -rate 5 https://app.example.com
+ijiya -threads 4 -rate 5 https://app.example.com
 ```
 
 Write JSON, SARIF, or Markdown output:
 
 ```console
-./ijiya -o json -out report.json https://app.example.com
-./ijiya -o sarif -out results.sarif https://app.example.com
-./ijiya -o markdown https://app.example.com
+ijiya -o json -out report.json https://app.example.com
+ijiya -o sarif -out results.sarif https://app.example.com
+ijiya -o markdown https://app.example.com
 ```
 
 ### Flags
@@ -161,7 +194,7 @@ Write JSON, SARIF, or Markdown output:
 | `-tui` | off | Force the interactive interface |
 | `-version` | — | Print the version |
 
-Use `./ijiya -h` for the complete help text.
+Use `ijiya -h` for the complete help text.
 
 ## Safety defaults
 
@@ -173,7 +206,7 @@ The scanner does not follow a redirect to another host unless you explicitly
 allow it:
 
 ```console
-./ijiya -allow-external-redirects https://trusted.example.com
+ijiya -allow-external-redirects https://trusted.example.com
 ```
 
 Only use this for a flow you understand and trust. The default prevents a
@@ -195,8 +228,8 @@ By default, the scanner sees what an anonymous visitor sees. Use `-H` to send
 session or API credentials with every request:
 
 ```console
-./ijiya -H "Cookie: session=$SESSION" https://app.example.com/account
-./ijiya -H "Authorization: Bearer $TOKEN" https://api.example.com/v1/me
+ijiya -H "Cookie: session=$SESSION" https://app.example.com/account
+ijiya -H "Authorization: Bearer $TOKEN" https://api.example.com/v1/me
 ```
 
 The flag can be repeated. Values may contain colons, so URLs and forwarded IP
@@ -223,13 +256,13 @@ new ones.
 Create a baseline:
 
 ```console
-./ijiya -o json -out ijiya-baseline.json "$STAGING_URL"
+ijiya -o json -out ijiya-baseline.json "$STAGING_URL"
 ```
 
 Use it in a later run:
 
 ```console
-./ijiya \
+ijiya \
   -baseline ijiya-baseline.json \
   -o sarif \
   -out results.sarif \
@@ -283,7 +316,7 @@ go run ./testdata/vulnserver -addr 127.0.0.1:8099
 Run the scanner in another:
 
 ```console
-./ijiya http://127.0.0.1:8099/
+ijiya http://127.0.0.1:8099/
 ```
 
 The test server also has an `/echo` endpoint for checking request headers:
@@ -325,6 +358,7 @@ scan does not prove that an application is secure.
 ## Development
 
 ```console
+go build -o ijiya .
 go test ./...
 go vet ./...
 gofmt -l .

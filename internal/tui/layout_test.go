@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"ijiya/internal/report"
-	"ijiya/internal/scan"
+	"github.com/worztm/ijiya/internal/report"
+	"github.com/worztm/ijiya/internal/scan"
 )
 
 // The interface is a design contract as much as a behaviour one: these tests

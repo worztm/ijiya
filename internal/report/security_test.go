@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"ijiya/internal/scan"
+	"github.com/worztm/ijiya/internal/scan"
 )
 
 func TestBuildRedactsURLsAndEvidence(t *testing.T) {

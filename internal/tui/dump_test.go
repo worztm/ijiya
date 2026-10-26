@@ -8,8 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"ijiya/internal/report"
-	"ijiya/internal/scan"
+	"github.com/worztm/ijiya/internal/report"
+	"github.com/worztm/ijiya/internal/scan"
 )
 
 // TestDumpScreens is a development aid: run with

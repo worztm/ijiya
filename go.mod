@@ -1,4 +1,4 @@
-module ijiya
+module github.com/worztm/ijiya
 
 go 1.26
 

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"ijiya/internal/scan"
+	"github.com/worztm/ijiya/internal/scan"
 )
 
 func find(sev scan.Severity) scan.Finding {

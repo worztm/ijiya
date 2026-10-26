@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            format: tar.gz
+          - goos: linux
+            goarch: arm64
+            format: tar.gz
+          - goos: darwin
+            goarch: amd64
+            format: tar.gz
+          - goos: darwin
+            goarch: arm64
+            format: tar.gz
+          - goos: windows
+            goarch: amd64
+            format: zip
+          - goos: windows
+            goarch: arm64
+            format: zip
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build archive
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          name="ijiya_${tag}_${GOOS}_${GOARCH}"
+          dir="dist/${name}"
+          mkdir -p "$dir"
+
+          binary="ijiya"
+          if [ "$GOOS" = "windows" ]; then
+            binary="ijiya.exe"
+          fi
+
+          CGO_ENABLED=0 go build \
+            -trimpath \
+            -ldflags="-s -w" \
+            -o "$dir/$binary" .
+
+          if [ "${{ matrix.format }}" = "zip" ]; then
+            (cd "dist/$name" && zip -q -r "../${name}.zip" .)
+          else
+            tar -C dist -czf "dist/${name}.tar.gz" "$name"
+          fi
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*.*
+          if-no-files-found: error
+
+  publish:
+    name: publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download archives
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum ijiya_* > SHA256SUMS
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "ijiya ${GITHUB_REF_NAME#v}" \
+            --generate-notes \
+            ijiya_* SHA256SUMS

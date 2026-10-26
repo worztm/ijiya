@@ -5,8 +5,8 @@ import (
 	"sort"
 	"time"
 
-	"ijiya/internal/scan"
-	"ijiya/internal/version"
+	"github.com/worztm/ijiya/internal/scan"
+	"github.com/worztm/ijiya/internal/version"
 )
 
 // Report is the complete result of one scan, in both rendering forms.

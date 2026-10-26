@@ -11,7 +11,7 @@ package main
 import (
 	"os"
 
-	"ijiya/internal/cli"
+	"github.com/worztm/ijiya/internal/cli"
 )
 
 func main() {

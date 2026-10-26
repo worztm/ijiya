@@ -9,8 +9,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"ijiya/internal/report"
-	"ijiya/internal/scan"
+	"github.com/worztm/ijiya/internal/report"
+	"github.com/worztm/ijiya/internal/scan"
 )
 
 // Options carries the CLI flags that configure an interactive scan.
