@@ -98,9 +98,14 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          sha256sum ijiya_* > SHA256SUMS
+          mapfile -t archives < <(find . -maxdepth 1 -type f \( -name 'ijiya_*.tar.gz' -o -name 'ijiya_*.zip' \) -printf '%f\n' | sort)
+          if [ "${#archives[@]}" -eq 0 ]; then
+            echo "no release archives were downloaded"
+            exit 1
+          fi
+          sha256sum "${archives[@]}" > SHA256SUMS
           gh release create "${GITHUB_REF_NAME}" \
             --repo "${GITHUB_REPOSITORY}" \
             --title "ijiya ${GITHUB_REF_NAME#v}" \
             --generate-notes \
-            ijiya_* SHA256SUMS
+            "${archives[@]}" SHA256SUMS
