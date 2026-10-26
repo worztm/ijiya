@@ -31,6 +31,10 @@ type Options struct {
 	// RateLimit caps outbound requests per second across the whole scan.
 	// Zero means unthrottled.
 	RateLimit float64
+	// AllowExternalRedirects opts out of the default same-host redirect
+	// boundary. Keeping redirects on the original host prevents a target from
+	// turning the scanner into a request proxy for another service.
+	AllowExternalRedirects bool
 }
 
 // Target is the shared HTTP session every check runs against.
@@ -130,15 +134,25 @@ func NewTarget(raw string, opts Options) (*Target, error) {
 
 	rt := &uaTransport{base: transport, ua: opts.UserAgent, headers: headerMap(opts.Headers)}
 
-	client := &http.Client{
-		Transport: rt,
-		Timeout:   opts.Timeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return http.ErrUseLastResponse
+	allowedHost := strings.ToLower(u.Host)
+	checkRedirect := func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return http.ErrUseLastResponse
+		}
+		if !opts.AllowExternalRedirects && strings.ToLower(req.URL.Host) != allowedHost {
+			from := allowedHost
+			if len(via) > 0 && via[0].URL != nil {
+				from = via[0].URL.Host
 			}
-			return nil
-		},
+			return fmt.Errorf("external redirect blocked: %s -> %s (use -allow-external-redirects to permit it)", from, req.URL.Host)
+		}
+		return nil
+	}
+
+	client := &http.Client{
+		Transport:     rt,
+		Timeout:       opts.Timeout,
+		CheckRedirect: checkRedirect,
 	}
 	direct := &http.Client{
 		Transport: rt,

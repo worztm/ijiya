@@ -51,6 +51,10 @@ type BuildOptions struct {
 	// reported. Suppression happens here, before scoring, so the grade and
 	// the -fail-on gate describe the new findings only.
 	Baseline *Baseline
+	// Redact removes credentials from target URLs and evidence before the
+	// report is rendered or serialized. Suppression runs first so baselines
+	// continue to use the original finding identity.
+	Redact bool
 }
 
 // Build assembles a Report from raw check results.
@@ -70,7 +74,25 @@ func Build(target string, started time.Time, results []scan.CheckResult, opts Bu
 	if n := opts.Baseline.Suppress(&rep); n > 0 {
 		rep.Suppressed = n
 	}
+	if opts.Redact {
+		redactReport(&rep)
+	}
 	return rep
+}
+
+func redactReport(rep *Report) {
+	if rep == nil {
+		return
+	}
+	rep.Target = scan.RedactURL(rep.Target)
+	for ci := range rep.Checks {
+		for fi := range rep.Checks[ci].Findings {
+			f := &rep.Checks[ci].Findings[fi]
+			f.URL = scan.RedactURL(f.URL)
+			f.Evidence = scan.RedactTextURLs(f.Evidence)
+			f.Remediation = scan.RedactTextURLs(f.Remediation)
+		}
+	}
 }
 
 // summarise counts findings by severity and derives the risk score and grade.

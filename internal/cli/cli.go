@@ -29,27 +29,29 @@ const (
 )
 
 type config struct {
-	target      string
-	checks      string
-	output      string
-	outFile     string
-	outFormat   string
-	baseline    string
-	timeout     time.Duration
-	threads     int
-	rate        float64
-	deep        bool
-	verbose     bool
-	noColor     bool
-	noBanner    bool
-	insecure    bool
-	userAgent   string
-	minSeverity string
-	failOn      string
-	list        bool
-	showVersion bool
-	tui         bool
-	headers     headerFlags
+	target                 string
+	checks                 string
+	output                 string
+	outFile                string
+	outFormat              string
+	baseline               string
+	timeout                time.Duration
+	threads                int
+	rate                   float64
+	deep                   bool
+	verbose                bool
+	noColor                bool
+	noBanner               bool
+	insecure               bool
+	allowExternalRedirects bool
+	showSecrets            bool
+	userAgent              string
+	minSeverity            string
+	failOn                 string
+	list                   bool
+	showVersion            bool
+	tui                    bool
+	headers                headerFlags
 }
 
 // headerFlags collects every -H occurrence. flag.Value is used rather than a
@@ -92,6 +94,8 @@ func Run(args []string) int {
 	fs.BoolVar(&cfg.noBanner, "no-banner", false, "hide the startup banner")
 	fs.BoolVar(&cfg.insecure, "k", false, "alias for -insecure")
 	fs.BoolVar(&cfg.insecure, "insecure", false, "skip TLS certificate verification")
+	fs.BoolVar(&cfg.allowExternalRedirects, "allow-external-redirects", false, "follow redirects to another host (unsafe; same-host only by default)")
+	fs.BoolVar(&cfg.showSecrets, "show-secrets", false, "do not redact credentials in report URLs (unsafe)")
 	fs.StringVar(&cfg.userAgent, "ua", "", "alias for -user-agent")
 	fs.StringVar(&cfg.userAgent, "user-agent", "", "User-Agent header to send")
 	fs.StringVar(&cfg.minSeverity, "min", "info", "hide findings below this severity (info|low|medium|high|critical)")
@@ -188,30 +192,33 @@ func Run(args []string) int {
 			return exitUsage
 		}
 		return tui.Run(tui.Options{
-			Target:      cfg.target,
-			Timeout:     cfg.timeout,
-			UserAgent:   cfg.userAgent,
-			Deep:        cfg.deep,
-			Insecure:    cfg.insecure,
-			Threads:     cfg.threads,
-			MinSeverity: minSev,
-			FailOn:      failOn,
-			Headers:     headers,
-			RateLimit:   cfg.rate,
-			OutFile:     cfg.outFile,
-			JSON:        format == report.FormatJSON,
-			Autostart:   cfg.target != "",
+			Target:                 cfg.target,
+			Timeout:                cfg.timeout,
+			UserAgent:              cfg.userAgent,
+			Deep:                   cfg.deep,
+			Insecure:               cfg.insecure,
+			AllowExternalRedirects: cfg.allowExternalRedirects,
+			ShowSecrets:            cfg.showSecrets,
+			Threads:                cfg.threads,
+			MinSeverity:            minSev,
+			FailOn:                 failOn,
+			Headers:                headers,
+			RateLimit:              cfg.rate,
+			OutFile:                cfg.outFile,
+			JSON:                   format == report.FormatJSON,
+			Autostart:              cfg.target != "",
 		})
 	}
 
 	target, err := scan.NewTarget(cfg.target, scan.Options{
-		Timeout:     cfg.timeout,
-		UserAgent:   cfg.userAgent,
-		Deep:        cfg.deep,
-		Insecure:    cfg.insecure,
-		Concurrency: cfg.threads,
-		Headers:     headers,
-		RateLimit:   cfg.rate,
+		Timeout:                cfg.timeout,
+		UserAgent:              cfg.userAgent,
+		Deep:                   cfg.deep,
+		Insecure:               cfg.insecure,
+		AllowExternalRedirects: cfg.allowExternalRedirects,
+		Concurrency:            cfg.threads,
+		Headers:                headers,
+		RateLimit:              cfg.rate,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -236,6 +243,9 @@ func Run(args []string) int {
 	if color {
 		report.EnableANSI()
 	}
+	if cfg.showSecrets && format == report.FormatText {
+		fmt.Fprintln(os.Stderr, "  warning: report URL redaction disabled; output may contain credentials")
+	}
 
 	// Machine readable formats are consumed by tools, so progress chatter
 	// on stderr would only be noise in a CI log.
@@ -248,20 +258,12 @@ func Run(args []string) int {
 	// requests on individual checks, so an offline host fails fast with a
 	// clear message instead of a report full of connection errors.
 	if _, err := target.Get(ctx, target.URL.String(), false); err != nil {
-		fmt.Fprintf(os.Stderr, "error: cannot reach %s: %v\n", target.URL.String(), err)
+		fmt.Fprintf(os.Stderr, "error: cannot reach %s: %v\n", scan.RedactURL(target.URL.String()), err)
 		return exitError
 	}
 
 	if !quiet {
-		fmt.Fprintf(os.Stderr, "  scanning %s with %d checks (%s)\n",
-			target.Base(), len(checks), checkNames(checks))
-		if len(headers) > 0 || cfg.rate > 0 {
-			fmt.Fprintf(os.Stderr, "  %s\n", sessionSummary(headers, cfg.rate))
-		}
-		if !baseline.Empty() {
-			fmt.Fprintf(os.Stderr, "  suppressing %d known finding(s) from %s\n",
-				baseline.Len(), cfg.baseline)
-		}
+		printScanHeader(target, checks, cfg, headers, baseline)
 	}
 
 	started := time.Now()
@@ -274,10 +276,14 @@ func Run(args []string) int {
 			}
 			switch {
 			case res.Failed():
-				fmt.Fprintf(os.Stderr, "  \x1b[91merror\x1b[0m  %-12s %s\n", res.ID, res.Error)
+				fmt.Fprintf(os.Stderr, "  %s %-12s %s\n", cliMark("✗", "91", color), res.ID, res.Error)
 			default:
-				fmt.Fprintf(os.Stderr, "  done  %-12s %-24s %d issue(s)\n",
-					res.ID, res.Name, len(res.Findings))
+				issues := fmt.Sprintf("%d issue(s)", len(res.Findings))
+				if len(res.Findings) == 0 {
+					issues = "clean"
+				}
+				fmt.Fprintf(os.Stderr, "  %s %-12s %-24s %s\n",
+					cliMark("✓", "32", color), res.ID, res.Name, cliDim(issues, color))
 			}
 		},
 	}
@@ -287,6 +293,7 @@ func Run(args []string) int {
 		Requests: target.Requests(),
 		Banner:   !cfg.noBanner,
 		Baseline: baseline,
+		Redact:   !cfg.showSecrets,
 	})
 
 	// Render.
@@ -331,15 +338,56 @@ func Run(args []string) int {
 // writeReportFile renders rep into name, creating it with the usual
 // permissions for a report.
 func writeReportFile(name string, rep report.Report, format report.Format, opts report.TextOptions) error {
-	f, err := os.Create(name)
+	f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("creating %s: %w", name, err)
 	}
+	// Reports can contain authenticated URLs and evidence. Keep them private
+	// even when the process umask is permissive.
+	_ = f.Chmod(0o600)
 	defer func() { _ = f.Close() }()
 	if err := report.Write(f, rep, format, opts); err != nil {
 		return fmt.Errorf("writing %s: %w", name, err)
 	}
 	return nil
+}
+
+// printScanHeader gives the interactive CLI a compact, readable status card
+// before the check stream begins. It deliberately keeps secrets out of the
+// target line unless the user explicitly opts out of redaction.
+func printScanHeader(target *scan.Target, checks []scan.Check, cfg config, headers []scan.Header, baseline *report.Baseline) {
+	color := wantColor(cfg)
+	fmt.Fprintf(os.Stderr, "\n  %s %s\n", cliMark("◆", "96", color), cliBold("scan", color))
+	fmt.Fprintf(os.Stderr, "  %s %s\n", cliDim("target", color), scan.RedactURL(target.URL.String()))
+	fmt.Fprintf(os.Stderr, "  %s\n", cliDim(fmt.Sprintf("%d checks · timeout %s · concurrency %d", len(checks), cfg.timeout, cfg.threads), color))
+	if len(headers) > 0 || cfg.rate > 0 {
+		fmt.Fprintf(os.Stderr, "  %s\n", cliDim(sessionSummary(headers, cfg.rate), color))
+	}
+	if !baseline.Empty() {
+		fmt.Fprintf(os.Stderr, "  %s\n", cliDim(fmt.Sprintf("suppressing %d known finding(s) from %s", baseline.Len(), cfg.baseline), color))
+	}
+	fmt.Fprintln(os.Stderr)
+}
+
+func cliMark(mark, code string, color bool) string {
+	if !color {
+		return mark
+	}
+	return "\x1b[1;" + code + "m" + mark + "\x1b[0m"
+}
+
+func cliBold(text string, color bool) string {
+	if !color {
+		return text
+	}
+	return "\x1b[1m" + text + "\x1b[0m"
+}
+
+func cliDim(text string, color bool) string {
+	if !color {
+		return text
+	}
+	return "\x1b[2m" + text + "\x1b[0m"
 }
 
 // sessionSummary describes the request headers and throttle in use, naming the
@@ -449,6 +497,10 @@ func printUsage(fs *flag.FlagSet) {
 		"    disclosure  server banners, .git/.env leaks, directory listing",
 		"    redirect    open redirect parameters",
 		"",
+		"  Safety defaults:",
+		"    redirects stay on the target host and report URLs redact credential-like values",
+		"    use -allow-external-redirects or -show-secrets only when you understand the risk",
+		"",
 		"  " + version.Notice,
 		"",
 	} {
@@ -468,6 +520,7 @@ func printUsage(fs *flag.FlagSet) {
 		`  ijiya -rate 5 -min medium -fail-on high https://example.com`,
 		`  ijiya -baseline ijiya.json -o sarif -out results.sarif https://app.example.com`,
 		`  ijiya -k -threads 4 http://localhost:8080`,
+		`  ijiya -allow-external-redirects https://trusted.example.com`,
 	} {
 		sayln(w, ex)
 	}

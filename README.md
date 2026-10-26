@@ -12,7 +12,7 @@ $ ijiya https://app.example.com
     ██     ██    ██    ███   █████
     ██     ██    ██     ██   ██  ██
   █████   ███   █████    ██   ██  ██
-  lightweight web vulnerability scanner  v0.2.0
+  lightweight web vulnerability scanner  v0.3.0
   Only scan systems you own or have explicit permission to test.
 
   headers  Security headers  8ms · 3 issue(s)
@@ -76,7 +76,8 @@ $ ijiya -tui https://app.example.com   # open the TUI and scan immediately
 
 All the usual flags (`-k`, `-t`, `-threads`, `-deep`, `-out`, `-fail-on`, `-H`,
 `-rate`, …) apply to the interactive scan, and the exit code follows the same
-`-fail-on` contract — so a TUI run can still gate CI.
+`-fail-on` contract — so a TUI run can still gate CI. Report URLs are redacted
+by default in the TUI as well.
 
 Findings are pushed into the feed the moment a check discovers them rather
 than when the whole check finishes, which keeps long `-deep` runs interesting
@@ -135,6 +136,8 @@ $ ijiya [flags] <url>     # one-shot scan, prints a report and exits
 | `-fail-on` | `medium` | Exit `1` when a finding reaches this severity |
 | `-verbose`, `-v` | off | Show checks that passed too |
 | `-insecure`, `-k` | off | Skip TLS verification (staging boxes, self-signed certs) |
+| `-allow-external-redirects` | off | Follow redirects to another host (unsafe; same-host only by default) |
+| `-show-secrets` | off | Disable credential redaction in report URLs (unsafe) |
 | `-user-agent`, `-ua` | built-in | Override the User-Agent |
 | `-no-color`, `-nc` | off | Disable ANSI colour (also honours `NO_COLOR`) |
 | `-no-banner`, `-nb` | off | Hide the startup banner |
@@ -162,7 +165,24 @@ $ ijiya -rate 5 https://app.example.com
 
 # Local development box with a self-signed certificate
 $ ijiya -k -threads 4 http://localhost:8080
+
+# Explicitly allow a trusted cross-host redirect flow
+$ ijiya -allow-external-redirects https://trusted.example.com
 ```
+
+### Safety defaults
+
+Two guardrails are enabled by default:
+
+- Redirects are restricted to the original host, preventing a page from
+  turning `ijiya` into a proxy for another service. Use
+  `-allow-external-redirects` only for an explicitly trusted multi-host flow.
+- Credential-like query values, URL passwords, fragments and URLs embedded in
+  evidence are written as `REDACTED`. Use `-show-secrets` only when the report
+  is going to a controlled destination.
+
+Report files are created with owner-only permissions where the platform
+supports them.
 
 ### Scanning authenticated areas
 

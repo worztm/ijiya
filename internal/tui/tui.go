@@ -17,14 +17,16 @@ import (
 type Options struct {
 	// Target, when set, pre-fills the URL field. Combined with Autostart
 	// it begins scanning immediately.
-	Target      string
-	Timeout     time.Duration
-	UserAgent   string
-	Deep        bool
-	Insecure    bool
-	Threads     int
-	MinSeverity scan.Severity
-	FailOn      scan.Severity
+	Target                 string
+	Timeout                time.Duration
+	UserAgent              string
+	Deep                   bool
+	Insecure               bool
+	AllowExternalRedirects bool
+	ShowSecrets            bool
+	Threads                int
+	MinSeverity            scan.Severity
+	FailOn                 scan.Severity
 	// Headers are extra headers every request carries, which is how an
 	// authenticated area is scanned from the TUI too.
 	Headers []scan.Header

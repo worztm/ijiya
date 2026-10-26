@@ -352,8 +352,12 @@ func (m model) viewScanning(width int) []string {
 	done, total, issues := m.progress()
 
 	head := stSub.Render("TARGET")
-	if gaps := width - 2*margin - lipgloss.Width(head) - lipgloss.Width(m.targetURL()); gaps > 0 && m.targetURL() != "" {
-		head = head + strings.Repeat(" ", gaps) + stBody.Render(m.targetURL())
+	targetURL := m.targetURL()
+	if !m.opts.ShowSecrets {
+		targetURL = scan.RedactURL(targetURL)
+	}
+	if gaps := width - 2*margin - lipgloss.Width(head) - lipgloss.Width(targetURL); gaps > 0 && targetURL != "" {
+		head = head + strings.Repeat(" ", gaps) + stBody.Render(targetURL)
 	}
 	lines := []string{
 		masthead(width, "scanning"),
@@ -495,8 +499,12 @@ func (m model) viewResults(width int) []string {
 	s := m.report.Summary
 
 	head := stSub.Render("TARGET")
-	if gaps := width - 2*margin - lipgloss.Width(head) - lipgloss.Width(m.report.Target); gaps > 0 {
-		head = head + strings.Repeat(" ", gaps) + stBody.Render(m.report.Target)
+	targetURL := m.report.Target
+	if !m.opts.ShowSecrets {
+		targetURL = scan.RedactURL(targetURL)
+	}
+	if gaps := width - 2*margin - lipgloss.Width(head) - lipgloss.Width(targetURL); gaps > 0 {
+		head = head + strings.Repeat(" ", gaps) + stBody.Render(targetURL)
 	}
 	lines := []string{
 		masthead(width, "results"),

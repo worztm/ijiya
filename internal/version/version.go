@@ -5,7 +5,7 @@ const (
 	// Name is the tool name shown in banners and reports.
 	Name = "ijiya"
 	// Version is the semantic version of this release.
-	Version = "0.2.0"
+	Version = "0.3.0"
 	// Description is a one line summary used in --help output.
 	Description = "lightweight web vulnerability scanner"
 	// Notice reminds users to scan responsibly.

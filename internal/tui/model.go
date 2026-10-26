@@ -355,13 +355,14 @@ func (m model) startScan() (model, tea.Cmd) {
 		return m, nil
 	}
 	target, err := scan.NewTarget(raw, scan.Options{
-		Timeout:     m.opts.Timeout,
-		UserAgent:   m.opts.UserAgent,
-		Deep:        m.deep,
-		Insecure:    m.opts.Insecure,
-		Concurrency: m.opts.Threads,
-		Headers:     m.opts.Headers,
-		RateLimit:   m.opts.RateLimit,
+		Timeout:                m.opts.Timeout,
+		UserAgent:              m.opts.UserAgent,
+		Deep:                   m.deep,
+		Insecure:               m.opts.Insecure,
+		AllowExternalRedirects: m.opts.AllowExternalRedirects,
+		Concurrency:            m.opts.Threads,
+		Headers:                m.opts.Headers,
+		RateLimit:              m.opts.RateLimit,
 	})
 	if err != nil {
 		m.inputErr = err.Error()
@@ -436,6 +437,7 @@ func (m model) runScan(ctx context.Context, ch chan tea.Msg, target *scan.Target
 	}
 	send(scanDoneMsg{rep: report.Build(target.URL.String(), m.started, results, report.BuildOptions{
 		Requests: target.Requests(),
+		Redact:   !m.opts.ShowSecrets,
 		// The TUI draws its own header, so the text report does not repeat
 		// the ASCII banner inside the viewport.
 		Banner: false,
@@ -467,10 +469,11 @@ func (m model) saveReport() tea.Cmd {
 	min := m.opts.MinSeverity
 
 	return func() tea.Msg {
-		f, err := os.Create(path)
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 		if err != nil {
 			return saveDoneMsg{path: path, err: err}
 		}
+		_ = f.Chmod(0o600)
 		defer func() { _ = f.Close() }()
 		if asJSON {
 			err = report.WriteJSON(f, rep)
