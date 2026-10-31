@@ -94,6 +94,9 @@ func (s *Severity) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &n); err != nil {
 		return err
 	}
+	if n < int(SeverityInfo) || n > int(SeverityCritical) {
+		return fmt.Errorf("unknown severity rank %d (want %d..%d)", n, SeverityInfo, SeverityCritical)
+	}
 	*s = Severity(n)
 	return nil
 }

@@ -186,7 +186,7 @@ func (tlsCheck) Run(ctx context.Context, t *Target) ([]Finding, error) {
 	}
 
 	// Chain completeness: browsers need the intermediates too.
-	if chain, cerr := inspectChain(host, port, t.Opts.Timeout); cerr == nil && len(chain) == 1 {
+	if chain, cerr := inspectChain(ctx, host, port, t.Opts.Timeout); cerr == nil && len(chain) == 1 {
 		add(SeverityLow,
 			"Server does not send intermediate certificates",
 			fmt.Sprintf("Chain length: %d (leaf only).", len(chain)),
@@ -269,7 +269,7 @@ func inspectTLS(ctx context.Context, host, port string, timeout time.Duration) (
 }
 
 // inspectChain returns every certificate the server sent during a handshake.
-func inspectChain(host, port string, timeout time.Duration) ([]*x509.Certificate, error) {
+func inspectChain(parent context.Context, host, port string, timeout time.Duration) ([]*x509.Certificate, error) {
 	dialer := &tls.Dialer{
 		Config: &tls.Config{
 			InsecureSkipVerify: true, // #nosec G402 -- see inspectTLS
@@ -277,7 +277,7 @@ func inspectChain(host, port string, timeout time.Duration) ([]*x509.Certificate
 			MinVersion:         tls.VersionTLS10,
 		},
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(host, port))
 	if err != nil {

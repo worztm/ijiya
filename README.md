@@ -16,7 +16,7 @@ finding a severity, evidence, and a practical fix.
 Go 1.26 or newer can install `ijiya` directly from this repository:
 
 ```console
-go install github.com/worztm/ijiya@v0.3.0
+go install github.com/worztm/ijiya@v0.3.1
 ```
 
 The binary is placed in your Go binary directory. Make sure that directory is

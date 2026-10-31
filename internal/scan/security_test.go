@@ -2,11 +2,33 @@ package scan
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func TestSeverityJSONRejectsOutOfRangeRank(t *testing.T) {
+	for _, raw := range []string{"-1", "5", "99"} {
+		t.Run(raw, func(t *testing.T) {
+			var got Severity
+			if err := json.Unmarshal([]byte(raw), &got); err == nil {
+				t.Fatalf("accepted invalid severity rank %s as %v", raw, got)
+			}
+		})
+	}
+}
+
+func TestSeverityJSONAcceptsValidRank(t *testing.T) {
+	var got Severity
+	if err := json.Unmarshal([]byte("3"), &got); err != nil {
+		t.Fatalf("decode severity: %v", err)
+	}
+	if got != SeverityHigh {
+		t.Fatalf("severity = %v, want high", got)
+	}
+}
 
 func TestRedactURLRemovesCredentialLikeValues(t *testing.T) {
 	got := RedactURL("https://user:password@example.com/path?keep=yes&access_token=abc123&client-id=public#token")
