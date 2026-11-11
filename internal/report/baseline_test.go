@@ -183,6 +183,30 @@ func TestFingerprintIgnoresHostAndQueryButNotPath(t *testing.T) {
 	}
 }
 
+// TestFingerprintIgnoresHostForRootPath covers a target typed without a
+// trailing slash, which is the most common way a URL reaches the scanner.
+// The host must not survive into the fingerprint, or a baseline recorded on
+// staging would never match the same finding on a preview host.
+func TestFingerprintIgnoresHostForRootPath(t *testing.T) {
+	a := Fingerprint(finding("headers", "HSTS header missing", "https://staging.example.com", scan.SeverityMedium))
+	b := Fingerprint(finding("headers", "HSTS header missing", "https://preview.example.com", scan.SeverityMedium))
+	if a != b {
+		t.Error("the host must not change a fingerprint for a root path")
+	}
+
+	// The same page written with a trailing slash is the same page.
+	c := Fingerprint(finding("headers", "HSTS header missing", "https://preview.example.com/", scan.SeverityMedium))
+	if a != c {
+		t.Error("a trailing slash must not change a fingerprint for the root path")
+	}
+
+	// A real path still has to differ from the root.
+	d := Fingerprint(finding("headers", "HSTS header missing", "https://preview.example.com/app", scan.SeverityMedium))
+	if a == d {
+		t.Error("a different path must produce a different fingerprint")
+	}
+}
+
 func TestFingerprintFallsBackWhenCheckIsFilledByTheEngine(t *testing.T) {
 	// The baseline writer stores the check ID inside each finding, but a hand
 	// edited or older report may not; LoadBaseline fills it from the check.

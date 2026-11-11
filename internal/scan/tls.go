@@ -156,7 +156,7 @@ func (tlsCheck) Run(ctx context.Context, t *Target) ([]Finding, error) {
 	}
 
 	// Trust and issuance.
-	if err := cert.CheckSignatureFrom(cert); err == nil {
+	if isSelfSigned(cert) {
 		add(SeverityHigh,
 			"Certificate is self-signed",
 			fmt.Sprintf("Subject: %s | Issuer: %s", cert.Subject.CommonName, cert.Issuer.CommonName),
@@ -194,6 +194,21 @@ func (tlsCheck) Run(ctx context.Context, t *Target) ([]Finding, error) {
 	}
 
 	return out, nil
+}
+
+// isSelfSigned reports whether a certificate was signed by its own key.
+//
+// CheckSignatureFrom is the obvious way to ask this, but it also enforces
+// the CA rules of RFC 5280: a self-signed leaf (IsCA false, or without the
+// basicConstraints extension) fails the "parent certificate cannot sign this
+// kind of certificate" check, so the error is returned and the certificate
+// looks properly signed. Verifying the signature against the certificate's
+// own public key is the direct test and works for every shape.
+func isSelfSigned(cert *x509.Certificate) bool {
+	if cert == nil {
+		return false
+	}
+	return cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature) == nil
 }
 
 // keyStrength reports the certificate's key algorithm, its size in bits

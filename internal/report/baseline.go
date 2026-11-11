@@ -98,12 +98,21 @@ func normalisePath(raw string) string {
 		return ""
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Path == "" {
-		// Not a URL (or one without a path): fall back to the raw string so
-		// something stable is still compared.
+	if err != nil {
+		// Not a URL: fall back to the raw string so something stable is
+		// still compared.
 		return strings.TrimSpace(raw)
 	}
-	return strings.TrimSuffix(u.Path, "/")
+	// A URL with no path and a URL with a bare "/" both point at the root,
+	// so both normalise to the same empty path. Falling back to the raw
+	// string here would keep the host name in the fingerprint, which would
+	// stop a baseline recorded on staging from matching a scan of a
+	// preview host.
+	path := u.Path
+	if path == "" {
+		path = "/"
+	}
+	return strings.TrimSuffix(path, "/")
 }
 
 // Suppress removes findings the baseline already knows about from every check
