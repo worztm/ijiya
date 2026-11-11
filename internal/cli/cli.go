@@ -449,15 +449,6 @@ func allFailed(results []scan.CheckResult) bool {
 	return true
 }
 
-// checkNames renders the selected check IDs for the startup line.
-func checkNames(checks []scan.Check) string {
-	ids := make([]string, 0, len(checks))
-	for _, c := range checks {
-		ids = append(ids, c.ID())
-	}
-	return strings.Join(ids, ", ")
-}
-
 // sayf, say and sayln write help and status text. Terminal output is
 // best-effort: a failed write to a console or a flag set's writer cannot be
 // recovered from, and the process exit code already reflects the real result

@@ -66,7 +66,7 @@ func Build(target string, started time.Time, results []scan.CheckResult, opts Bu
 		StartedAt:  started,
 		DurationMS: time.Since(started).Milliseconds(),
 		Requests:   opts.Requests,
-		Checks:     results,
+		Checks:     cloneResults(results),
 		Banner:     opts.Banner,
 	}
 	rep.Summary, rep.RiskScore, rep.Grade = summarise(rep.Checks)
@@ -78,6 +78,23 @@ func Build(target string, started time.Time, results []scan.CheckResult, opts Bu
 		redactReport(&rep)
 	}
 	return rep
+}
+
+// cloneResults copies the check results and their findings so that building
+// a report never writes back into the slice the caller handed over.
+//
+// The findings are shared: the interactive interface streams them to its
+// update loop while the report is built, and redaction rewrites the URL and
+// evidence fields in place. Copying keeps the two apart, so the report
+// describes a scan without changing the scan.
+func cloneResults(results []scan.CheckResult) []scan.CheckResult {
+	out := make([]scan.CheckResult, len(results))
+	for i, r := range results {
+		out[i] = r
+		out[i].Findings = make([]scan.Finding, len(r.Findings))
+		copy(out[i].Findings, r.Findings)
+	}
+	return out
 }
 
 func redactReport(rep *Report) {

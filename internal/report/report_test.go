@@ -1,6 +1,7 @@
 package report
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -53,6 +54,33 @@ func TestBuildCountsAndScores(t *testing.T) {
 	}
 	if rep.Requests != 12 {
 		t.Errorf("requests = %d, want 12", rep.Requests)
+	}
+}
+
+// TestBuildDoesNotMutateTheCallersFindings covers the shared-slice problem
+// behind the data race in the interactive interface: the findings are handed
+// to the report builder and to the view at the same time, so the builder has
+// to leave the caller's copy alone.
+//
+// The check is deliberately observable without the race detector: the URL
+// still carries its token after the report was built and redacted.
+func TestBuildDoesNotMutateTheCallersFindings(t *testing.T) {
+	results := []scan.CheckResult{{
+		ID: "headers", Name: "Security headers", Category: scan.CategoryHeaders,
+		Findings: []scan.Finding{{
+			Severity: scan.SeverityMedium,
+			Title:    "HSTS header missing",
+			URL:      "https://example.com/?token=secret123",
+		}},
+	}}
+
+	rep := Build("https://example.com/?token=secret123", time.Now(), results, BuildOptions{Redact: true})
+
+	if got := results[0].Findings[0].URL; !strings.Contains(got, "secret123") {
+		t.Errorf("Build rewrote the caller's finding URL: %q", got)
+	}
+	if got := rep.Checks[0].Findings[0].URL; strings.Contains(got, "secret123") {
+		t.Errorf("the report itself was not redacted: %q", got)
 	}
 }
 
